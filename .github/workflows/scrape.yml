@@ -1,0 +1,103 @@
+name: Daily price scrape
+
+on:
+  schedule:
+    # Thời gian chạy đã tăng lên ~5-6h (ghé trang sản phẩm lấy "Giá cuối" flash sale + PAGE_CAP=50
+    # cho danh mục dài như màn hình). Mục tiêu: run 1 xong TRƯỚC 8h sáng, run 2 xong QUANH 13h VN.
+    - cron: "30 18 * * *"   # run 1 — bắt đầu 01:30 VN (18:30 UTC hôm trước) → xong ~07:30 VN (trước 8h)
+    # Run 2 bắt đầu SAU khi run 1 xong (~07:30 VN) để không bị concurrency xếp hàng; 6h → xong ~13:30 VN.
+    - cron: "30 0 * * *"    # run 2 — bắt đầu 07:30 VN (00:30 UTC) → xong ~13:30 VN (quanh trưa/đầu chiều)
+  workflow_dispatch: # allow manual runs from the Actions tab
+
+# Chỉ MỘT lần scrape chạy tại một thời điểm. Nếu cron thứ 2 (hoặc chạy tay) kích hoạt khi lần trước
+# CHƯA xong (~3.5-4 giờ), lần mới sẽ CHỜ tới khi lần đang chạy kết thúc — KHÔNG chạy song song (tránh
+# hai tiến trình cùng ghi vào Supabase, cùng tranh proxy). cancel-in-progress: false = không huỷ
+# lần đang chạy giữa chừng (không để lại dữ liệu dở dang).
+concurrency:
+  group: daily-price-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run scrapers
+        # Secrets configured in Settings → Secrets and variables → Actions:
+        #   SUPABASE_URL, SUPABASE_KEY (service_role), PROXY_SERVER/USERNAME/PASSWORD
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+        run: |
+          # ── Đo thời gian: mỗi lần gọi scraper được bọc bởi run_timed để ghi lại wall-clock. Dòng
+          # "⏱ TIMING <shop> <pass> <giây>" in ngay tại chỗ (grep được trong log), đồng thời ghi vào
+          # $TIMINGS để cuối bước in BẢNG XẾP HẠNG shop×pass tốn thời gian nhất. Không đổi hành vi
+          # scrape (vẫn `|| true` để một scraper hỏng không làm đỏ cả bước). ──
+          TIMINGS="$RUNNER_TEMP/timings.tsv"; : > "$TIMINGS"
+          run_timed() {              # $1=shop  $2=pass(brand/cat)  $3..=command
+            local shop="$1" pass="$2"; shift 2
+            local start=$SECONDS
+            "$@" || true
+            local dur=$(( SECONDS - start ))
+            printf '⏱ TIMING\t%s\t%s\t%ss\n' "$shop" "$pass" "$dur"
+            printf '%s\t%s\t%s\n' "$dur" "$shop" "$pass" >> "$TIMINGS"
+          }
+
+          # ── Laptop: one pass per brand (TNC first defines the catalog, then competitors). ──
+          for brand in dell lenovo apple hp asus acer msi; do
+            echo "::group::Laptop $brand"
+            for shop in tnc anphat cellphones hacom phongvu fptshop tgdd gearvn memoryzone; do
+              run_timed "$shop" "laptop/$brand" python -m "scraper.discover_$shop" --brand "$brand"
+            done
+            echo "::endgroup::"
+          done
+
+          # ── Other categories: one pass each (TNC first, then competitors). The category LIST is
+          # read from config (enabled-only) so toggling `enabled: false` in sources.yaml removes a
+          # category from CI with no workflow edit. ──
+          CATS=$(python -c "from scraper.config import categories; print(' '.join(sorted(categories())))")
+          echo "Enabled categories: $CATS"
+          for cat in $CATS; do
+            echo "::group::Category $cat"
+            for shop in tnc anphat cellphones hacom phongvu fptshop tgdd gearvn memoryzone; do
+              run_timed "$shop" "$cat" python -m "scraper.discover_$shop" --category "$cat"
+            done
+            echo "::endgroup::"
+          done
+
+          # ── Bảng xếp hạng: 25 lần gọi tốn thời gian nhất + tổng thời gian theo shop. Grep "TIMING
+          # SUMMARY" trong log để đọc nhanh phần nào ngốn giờ. ──
+          echo "::group::⏱ TIMING SUMMARY"
+          echo "== Top 25 chậm nhất (giây  shop  pass) =="
+          sort -rn "$TIMINGS" | head -25 | awk -F'\t' '{printf "%6ss  %-12s %s\n",$1,$2,$3}'
+          echo "== Tổng theo shop (giây) =="
+          awk -F'\t' '{s[$2]+=$1} END{for(k in s) print s[k]"\t"k}' "$TIMINGS" \
+            | sort -rn | awk -F'\t' '{printf "%6ss  %s\n",$1,$2}'
+          echo "== Tổng toàn bộ =="
+          awk -F'\t' '{s+=$1} END{printf "%ss (%.1f phút)\n",s,s/60}' "$TIMINGS"
+          echo "::endgroup::"
+
+      # latest_prices_cache là ẢNH CHỤP — phải refresh sau khi scrape để dashboard thấy giá mới. Bước
+      # RIÊNG, KHÔNG có `|| true`: nếu refresh lỗi → CI ĐỎ (có email). Refresh im lặng thất bại là ca
+      # tệ nhất (dữ liệu mới trong DB nhưng dashboard hiện cũ), nên phải để nó báo lỗi rõ ràng.
+      - name: Refresh latest_prices cache
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m scraper.refresh_views

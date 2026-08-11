@@ -1,0 +1,57 @@
+name: Deploy dashboard to GitHub Pages
+
+# Builds the React dashboard and publishes it to GitHub Pages on every push to main.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allow manual runs from the Actions tab
+
+# Permissions required by the Pages deploy action.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deploy at a time; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        # Supabase URL + anon key come from repo secrets (Settings → Secrets → Actions).
+        # The anon key is safe to embed in a public build *because RLS is enabled* (read-only).
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

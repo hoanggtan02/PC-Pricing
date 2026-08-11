@@ -1,0 +1,289 @@
+# Brand vocabulary — the human-editable source of truth for brand detection.
+# Loaded by scraper/scraper/brand.py. `brand_of(name)` returns the canonical brand whose keyword
+# matches (word-boundary), else falls back to structural extraction (the token after the category
+# prefix), else "Other".
+#
+# To add/fix a brand: add a line below. Canonical name on the left; the keyword(s) that appear in
+# product names on the right (lowercased). Multi-word brands ("E-Dra") and aliases ("macbook" for
+# Apple) go in the list. Order matters only for tie-breaks (earlier wins), e.g. Lenovo before HP so
+# "15AHP11" isn't read as HP.
+
+brands:
+  # ── computer makers (laptops, monitors, PCs) ──
+  Lenovo:    [lenovo, thinkvision]
+  Dell:      [dell, alienware]
+  Asus:      [asus, rog, tuf]
+  Acer:      [acer, predator, nitro]
+  HP:        [hp, omen]
+  Apple:     [apple, macbook, imac]
+  MSI:       [msi]
+  Gigabyte:  [gigabyte, aorus]
+
+  # ── VGA / Mainboard makers ──
+  # ASRock: trước đây brand_of("Mainboard ASROCK ...") rơi về "Mainboard" (không có từ khóa) → SKU rác.
+  # Leadtek: "a4" (A4Tech) khớp bên trong mã "A400" → brand_of("Leadtek RTX A400") ra nhầm "A4Tech";
+  # thêm Leadtek để nó khớp ngay ở đầu tên (ưu tiên vị trí sớm nhất).
+  ASRock:    [asrock]
+  Leadtek:   [leadtek]
+  Inno3D:    [inno3d]
+  Palit:     [palit]
+  Zotac:     [zotac]
+  Galax:     [galax]
+  Gainward:  [gainward]
+  Sapphire:  [sapphire]
+  PowerColor: [powercolor, power color]
+  Sparkle:   [sparkle]
+  # NVIDIA cuối danh sách: chỉ dùng khi KHÔNG có hãng board (Leadtek/PNY…) đứng trước — card
+  # "NVIDIA RTX PRO 6000" bán trần không có hãng board thì brand=NVIDIA (không để rơi về "VGA").
+  NVIDIA:    [nvidia]
+
+  # ── CPU (chỉ có 2 hãng: Intel và AMD) ──
+  # Bắt cả tên DÒNG vì nhiều tên sản phẩm không ghi hãng: TNC ghi "CPU Athlon 3000G" (không có chữ
+  # "AMD"), và "Core i5 14400" / "Ryzen 5 5600X" cũng thường đứng một mình.
+  Intel:     [intel, celeron, pentium, xeon]
+  AMD:       [amd, ryzen, athlon, threadripper, radeon]
+
+  # ── Máy in / scan (printer, scanner) ──
+  Epson:     [epson, ecotank]
+  Canon:     [canon]
+  Brother:   [brother]
+  Pantum:    [pantum]
+  Plustek:   [plustek]
+  Fujitsu:   [fujitsu]
+
+  # ── UPS (bộ lưu điện) ──
+  Santak:      [santak]
+  APC:         [apc]
+  CyberPower:  [cyber power, cyberpower]
+  ARES:        [ares]
+  Eaton:       [eaton]
+  Sorotec:     [sorotec]
+
+  # ── Máy chiếu (projector) ──
+  Panasonic:   [panasonic]
+  Apollo:      [apollo]
+  Wanbo:       [wanbo]
+  Optoma:      [optoma]
+  Boxlight:    [boxlight]
+
+  # ── display makers (monitors, TVs) ──
+  Samsung:       [samsung, odyssey, viewfinity]
+  LG:            [lg, ultragear]
+  ViewSonic:     [viewsonic]   # cũng làm máy chiếu
+  TCL:           [tcl]         # tivi TCL — "Google Tivi TCL" phải ra TCL, không phải "Google"
+  Casper:        [casper]
+  Asanzo:        [asanzo]
+  AOC:           [aoc]
+  BenQ:          [benq, mobiuz]
+  Philips:       [philips]
+  Xiaomi:        [xiaomi, mi]
+  E-Dra:         [e-dra, edra]
+  HKC:           [hkc]
+  Hikvision:     [hikvision]
+  VSP:           [vsp]
+  Cooler Master: [cooler master, coolermaster]
+
+  # ── audio / peripherals / networking (add as categories are onboarded) ──
+  Sony:      [sony, bravia]
+  JBL:       [jbl]
+  Logitech:  [logitech]
+  Corsair:   [corsair]
+  Kingston:  [kingston, hyperx, fury]
+
+  # ── RAM / lưu trữ: các hãng còn thiếu khiến brand_of() rơi về tên danh mục ("Ram") và SKU bị hỏng.
+  # Vd trước khi thêm: "Ram Desktop Kingmax 8GB DDR4 Bus 3200Mhz" → brand="Ram", sku="RAM-8GB-3200"
+  # — SKU chỉ có spec nên MỌI RAM 8GB/3200 không rõ hãng đều gộp vào một khoá (lỗi trùng SKU).
+  Kingmax:   [kingmax]
+  Biwin:     [biwin]
+  Synology:  [synology]
+  Patriot:   [patriot, viper]
+  PNY:       [pny]
+  AGI:       [agi]
+  Colorful:  [colorful]
+  SSK:       [ssk]        # hãng box ổ cứng (HDD BOX SSK SHE-085)
+  TP-Link:   [tp-link, tplink, "tp link", archer, omada, deco]
+  D-Link:    [d-link, dlink]
+  # ── thiết bị mạng (router / switch / access point / controller) ──
+  Tenda:      [tenda]
+  Totolink:   [totolink]
+  Cisco:      [cisco, linksys]
+  Ubiquiti:   [ubiquiti, unifi, ubnt]
+  DrayTek:    [draytek, vigor]
+  Ruijie:     [ruijie, reyee]
+  Grandstream: [grandstream]
+  Mikrotik:   [mikrotik]
+  Aruba:      [aruba]
+  Mercusys:   [mercusys]
+  Aptek:      [aptek]
+  Cudy:       [cudy]
+  H3C:        [h3c]
+  Netgear:    [netgear, nighthawk]
+  Zyxel:      [zyxel]
+  Fortinet:   [fortinet, fortigate]
+  Peplink:    [peplink, pepwave]
+  # bàn phím / chuột / webcam
+  Genius:    [genius]
+  AULA:      [aula]
+  Keychron:  [keychron]
+  Razer:     [razer]
+  Rapoo:     [rapoo]
+  Microsoft: [microsoft]
+  Dareu:     [dareu, "dare-u"]
+  Fuhlen:    [fuhlen]
+  Newmen:    [newmen]
+  Leobog:    [leobog]
+  Akko:      [akko]
+  Leopold:   [leopold]
+  Durgod:    [durgod]
+  Steelseries: [steelseries, "steel series"]
+  Lecoo:     [lecoo]          # thương hiệu phụ kiện giá rẻ của Lenovo
+  Marvo:     [marvo]
+  Motospeed: [motospeed]
+  Zidli:     [zidli]
+  Coolerplus: [coolerplus]
+  Cliptec:   [cliptec]
+  Baseus:    [baseus]
+  MOFII:     [mofii]
+  # HDD/SSD box & docking
+  Orico:     [orico]
+  Ugreen:    [ugreen]
+  Unitek:    [unitek]
+
+  # ── RAM / storage makers ──
+  G.Skill:         [g.skill, gskill, "g skill", trident, ripjaws]
+  Crucial:         [crucial, micron]
+  ADATA:           [adata, xpg]
+  TeamGroup:       [teamgroup, "team group", t-force, tforce]
+  Lexar:           [lexar, ares]
+  Apacer:          [apacer, nox]
+  Western Digital: [western digital, wd, wds, sandisk]
+  Seagate:         [seagate, barracuda, ironwolf]
+  Kioxia:          [kioxia, exceria, toshiba]   # Kioxia = bộ nhớ Toshiba cũ; "Exceria" là dòng SSD/USB
+  QNAP:            [qnap]
+  Transcend:       [transcend]
+  Netac:           [netac]
+  # thêm phụ kiện (bàn phím/chuột/combo) phát hiện qua audit brand rác
+  A4Tech:          [a4tech, "a4 tech", a4]
+  R8:              [r8]
+  Zadez:           [zadez]
+  Mytechsun:       [mytechsun]
+  Zalman:          [zalman]
+
+# Category prefixes to strip before structural brand extraction (for names like
+# "Màn hình <descriptors> <BRAND> <model>"). Used only when no keyword above matches.
+name_prefixes:
+  - "màn hình"
+  - "lcd"
+  - "led"
+  - "gaming"
+  - "di động"
+  - "văn phòng"
+  - "cong"
+  - "curved"
+  - "oled"
+  # thiết bị mạng — để brand không rơi vào "Router"/"Phát"/"Switch" khi hãng lạ chưa có
+  - "thiết bị mạng"          # "THIẾT BỊ MẠNG Planet ..." -> tránh brand="Thiết"
+  - "thiet bi mang"
+  - "bộ định tuyến"          # "BỘ ĐỊNH TUYẾN TP-Link ..."
+  - "bo dinh tuyen"
+  - "bộ mở rộng sóng wi-fi"  # "BỘ MỞ RỘNG SÓNG ... RE315" -> tránh brand="Mở"
+  - "bộ mở rộng sóng"
+  - "bộ mở rộng"
+  - "bo mo rong"
+  - "bộ kích mở rộng sóng"
+  - "bộ thu phát sóng"
+  - "bộ chuyển đổi"          # "BỘ CHUYỂN ĐỔI TP-Link ..."
+  - "bộ chia mạng"
+  - "băng tần kép"           # "... BĂNG TẦN KÉP BE3600" -> tránh brand="Băng"
+  - "bang tan kep"
+  - "ba băng tần"
+  - "router cân bằng tải"
+  - "cân bằng tải"
+  - "can bang tai"
+  - "bộ phát sóng wifi"
+  - "bộ phát wifi"
+  - "bộ phát"
+  - "bo phat"
+  - "phát wifi"
+  - "phát"
+  - "phat"
+  - "router wifi"
+  - "router"
+  - "switch poe"
+  - "switch"
+  - "access point"
+  - "wifi mesh"
+  - "wifi"
+  - "wi-fi"
+  - "mesh"
+  - "4g"
+  - "5g"
+  - "lte"
+  # bàn phím / chuột / USB / box — để brand không rơi vào "Bàn"/"Chuột"/"Hộp" khi hãng lạ chưa có
+  - "bàn phím cơ"
+  - "bàn phím"
+  - "ban phim"
+  - "keyboard"
+  - "chuột"
+  - "chuot"
+  - "mouse"
+  - "combo bàn phím + chuột"
+  - "combo"
+  - "webcam"
+  - "usb"
+  - "thẻ nhớ"
+  - "the nho"
+  - "hộp đựng ổ cứng"
+  - "hộp ổ cứng"
+  - "box ổ cứng"
+  - "dock ổ cứng"
+  - "docking ổ cứng"
+  # ổ cứng SSD/HDD — bare prefixes (phải có, nếu không "Ổ"/"O" bị lấy làm brand)
+  - "ổ cứng gắn trong"
+  - "ổ cứng gắn ngoài"
+  - "ổ cứng di động"
+  - "ổ cứng"
+  - "o cung gan trong"
+  - "o cung"
+  - "gắn trong"
+  - "gan trong"
+  - "gắn ngoài"
+  - "ssd"
+  - "hdd"
+  - "m.2 2280"
+  - "m.2-2280"
+  - "m.2"
+  - "m2"
+  - "2.5 inch"
+  - "3.5 inch"
+  - "sata iii"
+  - "sata"
+  - "nvme"
+  - "pcie"
+  - "thẻ nhớ"
+  - "the nho"
+  # combo / bộ phím-chuột
+  - "combo bàn phím + chuột"
+  - "combo bàn phím và chuột"
+  - "bộ bàn phím chuột"
+  - "bộ bàn phím"
+  - "bộ"
+  - "máy tính"
+  - "máy"
+  - "chơi game"
+  - "chơi"
+  - "game"
+  - "có dây"
+  - "không dây"
+  - "có led"
+  - "có"
+  - "số"
+  - "so"
+  - "giả cơ"
+  - "cơ"
+  - "quang"
+  - "bluetooth"
+  - "silent"
+  - "mini"
+  - "và"
+  - "+"

@@ -1,0 +1,6 @@
+httpx>=0.27
+beautifulsoup4>=4.12
+supabase>=2.4
+python-dotenv>=1.0
+playwright>=1.40   # headless browser for JS-rendered pages (CellphoneS search discovery)
+pyyaml>=6.0        # scraper/config/sources.yaml (category → listing URLs)

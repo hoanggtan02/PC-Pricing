@@ -1,0 +1,355 @@
+# Scraper source registry — the retailer-editable list of where to find prices, by CATEGORY.
+# Category-driven model: one scrape per category (no per-brand loop). Each product's brand is
+# derived from its name (see config/brands.yaml); matching is by SKU.
+#
+# Competitor URL styles:
+#   * search-box sites   -> one `search_url` template each (below), filled with {query} = the
+#       category's `search_term` (e.g. "man hinh"). One fetch returns all brands.
+#   * category-path sites -> a `path` URL per (category, competitor) under the category, because
+#       they have no clean search box.
+# TNC (our own store, the catalog driver) uses the category's `tnc` URL.
+
+# ── search-box competitors: one template each, {query} = category search_term ────────────────────
+competitors:
+  hacom:      { search_url: "https://hacom.vn/tim?q={query}" }
+  cellphones: { search_url: "https://cellphones.com.vn/catalogsearch/result?q={query}" }
+  anphat:     { search_url: "https://www.anphatpc.com.vn/tim?scat_id=&q={query}" }
+  memoryzone: { search_url: "https://memoryzone.com.vn/search?query={query}" }
+  gearvn:     { search_url: "https://gearvn.com/search?q={query}" }
+  # fptshop / phongvu: search_url ở đây là DỰ PHÒNG — `paths` bên dưới vẫn ưu tiên (đầy đủ hơn); danh
+  # mục chưa có path thì rơi xuống search thay vì trả None. tgdd CỐ Ý không có search fallback (tìm linh
+  # kiện trả về laptop/điện thoại). Chi tiết + số liệu: docs/competitor-category-navigation.md, docs/proxy.md.
+  fptshop:    { search_url: "https://fptshop.com.vn/tim-kiem?s={query}" }
+  phongvu:    { search_url: "https://phongvu.vn/search?router=productListing&query={query}" }
+
+# ── categories ─────────────────────────────────────────────────────────────────────────────────
+categories:
+  monitor:
+    tier: A
+    search_term: "màn hình"                       # search-box query (all brands in one fetch)
+    name_match: "màn hình|man hinh|lcd|led|monitor"  # keep only real monitors from noisy results
+    # Phụ kiện có chứa "màn hình" trong tên nhưng KHÔNG phải màn hình (giá đỡ/tay treo/arm/mount)
+    name_exclude: "giá đỡ|gia do|giá treo|gia treo|tay treo|arm|mount|chân màn"
+    tnc: "https://www.tnc.com.vn/man-hinh-lcd.html?p={page}"   # TNC category page (all brands)
+    paths:                                         # category-path sites (no search box)
+      phongvu: "https://phongvu.vn/c/man-hinh-may-tinh"
+      tgdd:    "https://www.thegioididong.com/man-hinh-may-tinh"
+      fptshop: "https://fptshop.com.vn/man-hinh"
+
+  cpu:
+    tier: A
+    search_term: "cpu"
+    # Giữ CPU thật: tên có "cpu"/"bộ vi xử lý", hoặc trực tiếp là dòng Intel/AMD (Core i5, Ryzen 7,
+    # Core Ultra, Xeon, Threadripper) — TNC nhiều khi bỏ tiền tố "CPU" (vd "Intel Core i7 14700").
+    name_match: "\\bcpu\\b|bộ vi xử lý|bo vi xu ly|core\\s*(i[3579]|ultra)|\\bryzen\\b|\\bxeon\\b|threadripper"
+    # Loại hàng KHÔNG phải CPU nhưng lọt vào trang/tìm kiếm: mainboard (trang cpu.html của TNC có
+    # lẫn), tản nhiệt CPU, quạt, keo tản nhiệt, và laptop/PC (tên chứa "Core i5" nhưng là cả máy).
+    name_exclude: "mainboard|bo mạch|main\\b|tản nhiệt|tan nhiet|quạt|fan\\b|keo tản|thermal|cooler|^laptop|^pc\\b|^máy|barebone|combo"
+    tnc: "https://www.tnc.com.vn/cpu.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/cpu"
+      fptshop: "https://fptshop.com.vn/linh-kien/cpu"
+      gearvn:  "https://gearvn.com/collections/cpu-bo-vi-xu-ly"
+
+  # ── VGA / Card màn hình (BRAND-GPU-DÒNG-MEM; dùng vga_sku) ──
+  vga:
+    tier: A
+    search_term: "vga"
+    # Giữ VGA thật: tên VGA của TNC LUÔN chứa "card màn hình" — KHÔNG loại "màn hình" ở đây (khác
+    # monitor). Bắt cả geforce/radeon/rtx/gtx cho listing bỏ tiền tố "card".
+    name_match: "vga|card màn hình|card man hinh|geforce|radeon|\\brtx\\b|\\bgtx\\b"
+    # Loại thứ lọt vào tìm-kiếm "vga" nhưng KHÔNG phải card đồ hoạ:
+    #  • có chữ "card" nhưng khác loại: capture/sound/card mạng/wifi.
+    #  • hàng khác có "VGA/SVGA/WVGA" trong SPEC: mainboard (cổng "HDMI+VGA"), máy chiếu (SVGA/WVGA),
+    #    mini PC / máy tính trạm / workstation, và phụ kiện (cáp/bộ chuyển đổi/giá đỡ/bộ dựng VGA).
+    name_exclude: "^laptop|capture|sound card|card âm thanh|card mạng|card mang|network card|card wifi|mainboard|bo mạch|máy chiếu|may chieu|projector|mini pc|máy tính trạm|may tinh tram|workstation|máy bộ|cáp|bộ chuyển|giá đỡ|gia do|bộ dựng|holder|dịch vụ|sửa chữa"
+    tnc: "https://www.tnc.com.vn/vga-card.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/card-man-hinh-vga"
+      fptshop: "https://fptshop.com.vn/linh-kien/card-man-hinh"
+      gearvn:  "https://gearvn.com/collections/vga-card-man-hinh"
+
+  # ── Mainboard / Bo mạch chủ (BRAND-CHIPSET-MODEL-MEMGEN; dùng mainboard_sku) ──
+  mainboard:
+    tier: A
+    search_term: "mainboard"
+    name_match: "mainboard|bo mạch chủ|bo mach chu|\\bmain\\b|motherboard"
+    # Loại phụ kiện/không phải bo mạch: chỉ loại khi tên BẮT ĐẦU bằng laptop; combo/tản/nguồn lẫn vào.
+    name_exclude: "^laptop|tản nhiệt|tan nhiet|combo|nguồn|\\bpsu\\b"
+    tnc: "https://www.tnc.com.vn/mainboard.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/bo-mach-chu-mainboard"
+      fptshop: "https://fptshop.com.vn/linh-kien/mainboard"
+      gearvn:  "https://gearvn.com/collections/mainboard-bo-mach-chu"
+
+  # ── Thiết bị văn phòng / gia dụng (BRAND + mã model; dùng chung av_sku) ──
+  printer:
+    tier: A
+    search_term: "máy in"
+    name_match: "máy in|may in|printer|laserjet|ecotank|pixma"
+    name_exclude: "^laptop|mực in|muc in|mực|hộp mực|toner|cartridge|giấy|giay|drum|ribbon|đầu in|dau in"
+    tnc: "https://www.tnc.com.vn/may-in.html?p={page}"
+    paths:
+      tgdd: "https://www.thegioididong.com/may-in"
+      phongvu: "https://phongvu.vn/c/may-in"
+  scanner:
+    tier: A
+    search_term: "máy scan"
+    name_match: "máy scan|may scan|scanner|scanjet"
+    name_exclude: "^laptop|mực|muc|giấy|giay|đầu đọc|dau doc"
+    tnc: "https://www.tnc.com.vn/may-scan.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/may-scan"
+  ups:
+    tier: A
+    search_term: "bộ lưu điện ups"
+    name_match: "\\bups\\b|bộ lưu điện|bo luu dien|lưu điện"
+    name_exclude: "^laptop|pin thay thế|ắc quy|ac quy|battery|acquy"
+    tnc: "https://www.tnc.com.vn/ups.html?p={page}"
+    paths:
+      tgdd: "https://www.thegioididong.com/bo-luu-dien"
+
+  projector:
+    tier: A
+    search_term: "máy chiếu"
+    name_match: "máy chiếu|may chieu|projector"
+    name_exclude: "^laptop|màn chiếu|man chieu|giá treo|gia treo|remote|bóng đèn|bong den|lamp"
+    tnc: "https://www.tnc.com.vn/may-chieu.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/thiet-bi-trinh-chieu"
+  tv:
+    tier: A
+    search_term: "tivi"
+    name_match: "tivi|smart tv|\\btv\\b|television"
+    # Loại phụ kiện TV: giá treo/khung treo tường (North Bayou, Ergotek…) lọt vào trang tivi.
+    name_exclude: "^laptop|giá treo|gia treo|giá đỡ|gia do|khung treo|kệ tivi|ke tivi|remote|android box|tv box"
+    tnc: "https://www.tnc.com.vn/tivi.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/tivi"
+      fptshop: "https://fptshop.com.vn/tivi"
+
+  tablet:
+    tier: A
+    search_term: "máy tính bảng"
+    name_match: "máy tính bảng|may tinh bang|tablet|ipad|galaxy tab|\\btab\\b"
+    name_exclude: "^laptop|bao da|ốp|op lung|bàn phím|ban phim|bút|but cam ung|cường lực|cuong luc|dán màn|sạc|cáp"
+    tnc: "https://www.tnc.com.vn/may-tinh-bang-1592444847.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/may-tinh-bang"
+      fptshop: "https://fptshop.com.vn/may-tinh-bang"
+      tgdd: "https://www.thegioididong.com/may-tinh-bang"
+  ram:
+    tier: A
+    # A/B đo trên 5 site search-box (2026-07-23): "ram" THẮNG "ram pc" rõ rệt, 49 → 76 khớp (+55%).
+    #   CellphoneS 17→33 | HACOM 0→12 | An Phát 28→28 | GearVN 1→1 | Memoryzone 3→2
+    # Lý do: "ram pc" chỉ nổi listing có CHỮ "PC" trong tên (vd "Ram PC Kingmax"), BỎ SÓT
+    # "RAM Corsair VENGEANCE…", "RAM Kingston FURY…"; đồng thời kéo cả máy chủ/workstation vào vì
+    # chúng khớp "PC". name_match/name_exclude bên dưới đã lọc rác nên tìm rộng hơn là an toàn.
+    search_term: "ram"
+    name_match: "\\bram\\b|bộ nhớ|ddr\\d"          # giữ RAM thật (tên có "ram"/"bộ nhớ"/"DDRx")
+    # Loại: (1) RAM laptop/SODIMM — sản phẩm KHÁC với RAM desktop UDIMM của TNC (Kingston KVR…S…);
+    # tìm "ram laptop" GIỮA chuỗi, không chỉ ^laptop. (2) Máy chủ/workstation/PC nguyên chiếc lọt vào
+    # do search "ram" (An Phát nhồi "MÁY CHỦ DELL POWEREDGE…", "MÁY TÍNH TRẠM WORKSTATION…") → SKU rác
+    # DELL-42SVR…. (3) Phụ kiện dính "ram" (thẻ nhớ, ổ cứng, tản RAM).
+    name_exclude: "^laptop|ram laptop|sodimm|so-dimm|máy chủ|may chu|server|poweredge|proliant|thinksystem|máy trạm|may tram|workstation|^pcap|thẻ nhớ|the nho|ổ cứng|o cung|ssd|tản|led ram"
+    tnc: "https://www.tnc.com.vn/ram.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/ram"
+      fptshop: "https://fptshop.com.vn/linh-kien/ram"
+
+  ssd:
+    tier: A
+    search_term: "ổ cứng ssd"
+    name_match: "\\bssd\\b|ổ cứng|o cung"
+    name_exclude: "^laptop|hdd|hard disk|box ổ|docking|thẻ nhớ|the nho|usb"
+    tnc: "https://www.tnc.com.vn/o-cung-ssd.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/o-cung-ssd"
+      fptshop: "https://fptshop.com.vn/linh-kien/o-cung"
+
+  hdd:
+    tier: A
+    search_term: "ổ cứng hdd"
+    name_match: "\\bhdd\\b|ổ cứng|o cung|hard disk"
+    name_exclude: "^laptop|\\bssd\\b|box ổ|docking|thẻ nhớ|the nho|usb"
+    tnc: "https://www.tnc.com.vn/hdd.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/o-cung-hdd"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=hdd&categories=o-cung-hdd&page={page}"
+
+  # ── Phụ kiện linh-phu-kien (Tier A: bàn phím/chuột/webcam/USB/box đều có mã model in giống nhau) ──
+  keyboard:
+    enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
+    tier: A
+    search_term: "bàn phím"
+    name_match: "bàn phím|ban phim|keyboard"
+    name_exclude: "^laptop|lót|lot|kê tay|ke tay|combo|chuột|chuot|cover|film|skin"
+    tnc: "https://www.tnc.com.vn/keyboard.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=ban-phim"
+      tgdd:    "https://www.thegioididong.com/tim-kiem?key=ban+phim"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=ban+phim&categories=ban-phim&page={page}"
+
+  mouse:
+    enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
+    tier: A
+    search_term: "chuột máy tính"
+    name_match: "chuột|chuot|\\bmouse\\b"
+    name_exclude: "^laptop|lót|lot|pad|combo|bàn phím|ban phim|dây|day chuot|cáp"
+    tnc: "https://www.tnc.com.vn/mouse.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=chuot-may-tinh"
+      tgdd:    "https://www.thegioididong.com/tim-kiem?key=chuot+may+tinh"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=chuot&categories=chuot&page={page}"
+
+  combo:
+    enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
+    tier: A
+    search_term: "combo bàn phím chuột"
+    name_match: "combo|bàn phím.*chuột|ban phim.*chuot"
+    name_exclude: "^laptop|lót|lot"
+    tnc: "https://www.tnc.com.vn/mouse-amp-keyboard-combo.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=combo-phim-chuot"
+      tgdd:    "https://www.thegioididong.com/tim-kiem?key=combo+phim+chuot"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=combo+phim+chuot&page={page}"
+
+  webcam:
+    enabled: false   # tắt: ít giá trị, ưu tiên tốc độ scraper
+    tier: A
+    search_term: "webcam"
+    name_match: "webcam|web cam"
+    name_exclude: "^laptop|ip camera|camera ip|camera an ninh|camera giám sát|giam sat"
+    tnc: "https://www.tnc.com.vn/webcam.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=webcam"
+      tgdd:    "https://www.thegioididong.com/tim-kiem?key=webcam"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=webcam&categories=webcam&page={page}"
+
+  usb:
+    enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
+    tier: A
+    search_term: "usb"
+    name_match: "\\busb\\b|flash|datatraveler|cruzer"
+    name_exclude: "^laptop|hub|type-c$|cáp|cap |sạc|sac |quạt|quat|đèn|den |ổ cứng|o cung|box|dock|wifi|bluetooth|thẻ nhớ|the nho"
+    tnc: "https://www.tnc.com.vn/usb.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=usb"
+      tgdd:    "https://www.thegioididong.com/tim-kiem?key=usb+flash"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=usb&categories=usb&page={page}"
+
+  memcard:
+    tier: A
+    search_term: "thẻ nhớ"
+    name_match: "thẻ nhớ|the nho|memory card|microsd|micro sd|\\bsdxc\\b|\\bsdhc\\b"
+    name_exclude: "^laptop|đầu đọc|dau doc|reader|adapter|cáp|cap "
+    tnc: "https://www.tnc.com.vn/the-nho.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=the-nho"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=the+nho&categories=the-nho&page={page}"
+
+  box:
+    tier: A
+    search_term: "box ổ cứng"
+    name_match: "box|dock|docking|hộp.*ổ cứng|hop.*o cung|đựng ổ cứng|dung o cung"
+    name_exclude: "^laptop|ổ cứng ssd|o cung ssd|^ssd |^hdd |thẻ nhớ|the nho"
+    tnc: "https://www.tnc.com.vn/hdd-box-docking.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=box-o-cung"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=box+o+cung&page={page}"
+
+  # ── Thiết bị mạng (Tier A: router/switch/AP đều có mã model in giống nhau mọi cửa hàng) ──
+  # Router (gộp: wifi gia đình + doanh nghiệp) — một search_term "router" phủ cả hai bên đối thủ;
+  # phía TNC quét CẢ HAI trang catalog (wireless + router-doanh-nghiep) qua danh sách `tnc`.
+  router:
+    tier: A
+    search_term: "router"
+    name_match: "router|bộ phát|bo phat|\\bwifi\\b|wi-fi|firewall|gateway|balance|vigor|edgerouter"
+    name_exclude: "^laptop|switch|access point|repeater|card wifi|usb wifi|anten|dây|cáp|cap "
+    tnc:
+      - "https://www.tnc.com.vn/wireless.html?p={page}"
+      - "https://www.tnc.com.vn/router-doanh-nghiep.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/thiet-bi-mang-an-ninh"
+      tgdd:    "https://www.thegioididong.com/thiet-bi-mang"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=router&page={page}"
+
+  switch:
+    tier: A
+    search_term: "switch mạng"
+    name_match: "switch|\\bhub\\b"
+    name_exclude: "^laptop|kvm|usb hub|hub usb|hub type-c|bộ chia usb|converter"
+    tnc: "https://www.tnc.com.vn/hub-switch.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=switch-mang"
+      tgdd:    "https://www.thegioididong.com/tim-kiem?key=switch+mang"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=switch&page={page}"
+
+  accesspoint:
+    enabled: false   # tắt: gear doanh nghiệp, đối thủ ít bán → ít match
+    tier: A
+    search_term: "access point"
+    name_match: "access point|\\bap\\b|unifi|omada|eap"
+    name_exclude: "^laptop|switch|router|\\bapple\\b|app store"
+    tnc: "https://www.tnc.com.vn/access-point.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=access-point"
+      tgdd:    "https://www.thegioididong.com/tim-kiem?key=access+point"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=access+point&page={page}"
+
+  wlan_controller:
+    enabled: false   # tắt: gear doanh nghiệp, đối thủ ít bán → ít match
+    tier: A
+    search_term: "wlan controller"
+    name_match: "controller|gateway|omada|unifi|cloud key"
+    name_exclude: "^laptop|switch|access point|\\bap\\b"
+    tnc: "https://www.tnc.com.vn/ap-wlan-controller.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=wlan-controller"
+      tgdd:    "https://www.thegioididong.com/tim-kiem?key=wlan+controller"
+      fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=wlan+controller&page={page}"
+
+  pc:
+    tier: A
+    search_term: "pc"                          # "pc" cho nhiều match hơn "máy tính để bàn" trên các
+                                               # site tìm-kiếm (HACOM/CellphoneS/Memoryzone: 0→2/2/1).
+    # Tên PC của TNC luôn bắt đầu "Máy bộ ..."; không dùng khoảng trắng quanh "|" (sẽ thành literal).
+    name_match: "máy bộ|may bo|máy tính để bàn|may tinh de ban|máy tính bộ|may tinh bo|\\bpc\\b"
+    # Loại nhiễu: chỉ loại khi tên BẮT ĐẦU bằng loại phụ kiện (^) — PC nguyên bộ thường KÈM
+    # "Bàn phím/Chuột" trong tên (MSI ... /Bàn phím/Chuột) nên không được match giữa chuỗi.
+    # LOẠI máy build tự ráp của TNC ("PC TNC ...", "Máy bộ TNC ...", "Máy bộ TNC x Gigabyte ...") —
+    # đây là hàng riêng của shop, không có ở đối thủ nên không bao giờ khớp; \btnc\b bắt mọi vị trí.
+    name_exclude: "\\btnc\\b|^laptop|^màn hình|^man hinh|^bàn phím|^ban phim|^chuột|^chuot|^tai nghe|^loa |^webcam"
+    tnc: "https://www.tnc.com.vn/pc-server.html?p={page}"   # TNC category page (all brands)
+    # TODO: xác minh URL 3 site này QUA PROXY VN (chúng chặn IP ngoài VN — không kiểm tra trực tiếp
+    # được). Nếu URL sai, scraper trả 0 cho site đó; sửa URL rồi chạy lại --dry để xác nhận.
+    paths:                                         # category-path sites (no search box)
+      # Phong Vũ: dùng endpoint tìm-kiếm `search?router=productListing&query=` — trang này CÓ
+      # .att-product-detail-latest-price mà parser đọc được (khác /tim-kiem?q= vốn không có giá).
+      phongvu: "https://phongvu.vn/c/may-tinh-de-ban"
+      # TGĐĐ: slug /may-tinh-de-ban trần trả 0; dùng ô tìm-kiếm (tim-kiem?key=) → redirect về trang
+      # danh mục CÓ product cards mà parser (li.item) đọc được.
+      fptshop: "https://fptshop.com.vn/tim-kiem?s=may+tinh+de+ban&sort=noi-bat&categories=may-tinh-de-ban&page={page}"
+      tgdd: "https://www.thegioididong.com/may-tinh-de-ban"
+  # ── Máy trạm (Workstation) — branded (Dell Precision, HP Z, Lenovo ThinkStation) có mã model ──
+  workstation:
+    tier: A
+    search_term: "workstation"
+    name_match: "workstation|máy trạm|may tram|precision|thinkstation|\\bz[248]\\b"
+    name_exclude: "^laptop|^màn hình|^man hinh|^bàn phím|^ban phim|^chuột|card màn hình|vga"
+    tnc: "https://www.tnc.com.vn/may-tram-workstation.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/search?router=productListing&query=workstation"
+      fptshop: "https://fptshop.com.vn/tim-kiem?s=workstation&page={page}"
+
+  # ── Máy chủ (Server) — branded (Dell PowerEdge, HPE ProLiant, Lenovo ThinkSystem) có mã model ──
+  server:
+    tier: A
+    search_term: "server"
+    name_match: "server|máy chủ|may chu|poweredge|proliant|thinksystem|primergy"
+    name_exclude: "^laptop|^màn hình|^man hinh|ram server|ổ cứng server|nguồn server|cpu server|card"
+    tnc: "https://www.tnc.com.vn/may-chu-server.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/may-chu-server"
+      fptshop: "https://fptshop.com.vn/tim-kiem?s=server&page={page}"
+
