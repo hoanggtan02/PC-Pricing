@@ -31,16 +31,18 @@ const BRAND_COLORS = {
 const getColor = (name) => BRAND_COLORS[name] || '#94a3b8';
 
 // Tên danh mục hiển thị đẹp
+// Tên + icon danh mục
 const CATEGORY_DISPLAY = {
-    'laptop': 'Laptop',
-    'monitor': 'Màn hình',
-    'ssd': 'SSD',
-    'ram': 'RAM',
-    'cpu': 'CPU',
-    'mainboard': 'Mainboard',
-    'vga': 'Card màn hình',
+    'laptop':    { label: 'Laptop',           icon: 'bi-laptop' },
+    'monitor':   { label: 'Màn hình',         icon: 'bi-display' },
+    'ssd':       { label: 'SSD',              icon: 'bi-device-ssd' },
+    'ram':       { label: 'RAM',              icon: 'bi-memory' },
+    'cpu':       { label: 'CPU',              icon: 'bi-cpu' },
+    'mainboard': { label: 'Mainboard',        icon: 'bi-motherboard' },
+    'vga':       { label: 'Card màn hình',    icon: 'bi-gpu-card' },
 };
-const getCategoryName = (cat) => CATEGORY_DISPLAY[cat.toLowerCase()] ?? cat;
+const getCategoryName  = (cat) => CATEGORY_DISPLAY[cat.toLowerCase()]?.label ?? cat;
+const getCategoryIcon  = (cat) => CATEGORY_DISPLAY[cat.toLowerCase()]?.icon  ?? 'bi-grid';
 
 // ── Render bảng "Cần chú ý" ──────────────────────────────────────────
 function renderNeedsAttention(products) {
@@ -114,27 +116,27 @@ function renderCategoryCards(products, oosGaps) {
         card.className = 'glass-card category-nav-card';
         card.innerHTML = `
             <div class="card-header">
-                <h3>${getCategoryName(cat)}</h3>
-                <span class="badge badge-neutral">${data.count} sản phẩm</span>
+                <h3><i class="bi ${getCategoryIcon(cat)}"></i> ${getCategoryName(cat)}</h3>
+                <span class="badge badge-neutral"><i class="bi bi-box2"></i> ${data.count}</span>
             </div>
             <div class="card-metric">
-                <span>TB vs Thị trường</span>
+                <span class="metric-label"><i class="bi bi-percent"></i> TB vs Thị trường</span>
                 <span class="badge ${avg > 0 ? 'badge-red' : 'badge-green'}">
                     ${avg !== null ? (avg > 0 ? '+' : '') + avg + '%' : '—'}
                 </span>
             </div>
             <div class="card-metric">
-                <span>Bị đối thủ bán rẻ hơn</span>
+                <span class="metric-label"><i class="bi bi-exclamation-triangle"></i> Bị bán rẻ hơn</span>
                 <strong class="${data.beaten > 0 ? 'highlight-red' : 'highlight-green'}">${data.beaten}</strong>
             </div>
             <div class="card-metric">
-                <span>🚫 Ta hết hàng, đối thủ còn</span>
-                ${oos > 0 
-                    ? `<span class="badge badge-red" style="background:#fee2e2;color:#dc2626">${oos}</span>` 
+                <span class="metric-label"><i class="bi bi-slash-circle"></i> Hết hàng, đối thủ còn</span>
+                ${oos > 0
+                    ? `<span class="badge badge-red">${oos}</span>`
                     : '<strong class="highlight-green">0</strong>'
                 }
             </div>
-            <div class="card-footer">Vào xem chi tiết →</div>
+            <div class="card-footer">Xem chi tiết <i class="bi bi-arrow-right"></i></div>
         `;
         grid.appendChild(card);
     });
