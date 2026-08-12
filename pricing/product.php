@@ -1,4 +1,4 @@
-<?php // product.php — Chi tiết sản phẩm
+﻿<?php // product.php — Chi tiết sản phẩm
 $sku = $_GET['sku'] ?? '';
 ?>
 <!DOCTYPE html>
@@ -48,14 +48,16 @@ $sku = $_GET['sku'] ?? '';
         .price-row-self { background: rgba(1, 79, 43, 0.04); font-weight: 700; }
         .suggestion-list {
             position: absolute;
-            z-index: 100;
+            z-index: 9999;
             background: white;
             border: 1px solid var(--border-color);
             border-radius: 0.5rem;
-            box-shadow: var(--shadow);
-            max-height: 240px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+            max-height: 260px;
             overflow-y: auto;
-            width: 100%;
+            width: calc(100% - 120px); /* trừ độ rộng nút Tra cứu */
+            top: calc(100% + 4px);
+            left: 0;
         }
         .suggestion-item {
             padding: 0.65rem 1rem;
@@ -124,7 +126,7 @@ $sku = $_GET['sku'] ?? '';
 
     <main class="dashboard-grid">
         <!-- Thanh tìm kiếm -->
-        <div class="glass-card" style="padding:1.25rem 1.5rem;margin-bottom:1.5rem">
+        <div class="glass-card" style="padding:1.25rem 1.5rem;margin-bottom:1.5rem;overflow:visible">
             <h2 class="section-title" style="margin-bottom:0.75rem"><i class="bi bi-search"></i> Tìm sản phẩm</h2>
             <div style="position:relative">
                 <div class="search-box-wrap">

@@ -1,4 +1,4 @@
-<?php // trend.php — Xu hướng giá 7 ngày ?>
+﻿<?php // trend.php — Xu hướng giá 7 ngày ?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>

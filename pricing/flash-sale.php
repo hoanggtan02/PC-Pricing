@@ -1,4 +1,4 @@
-<?php // flash-sale.php — Flash Sale Detector ?>
+﻿<?php // flash-sale.php — Flash Sale Detector ?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>

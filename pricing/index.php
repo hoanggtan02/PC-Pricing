@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // PC Pricing Dashboard - Trang Chủ Tổng Quan (PHP + Vanilla JS)
 ?>
 <!DOCTYPE html>
@@ -52,6 +52,7 @@
             <a href="trend.php"><i class="bi bi-activity"></i> Xu Hướng 7 Ngày</a>
             <a href="product.php"><i class="bi bi-search"></i> Chi Tiết SP</a>
             <a href="flash-sale.php"><i class="bi bi-lightning-charge"></i> Flash Sale</a>
+            <a href="data-manager.php"><i class="bi bi-database-gear"></i> Quan Ly DL</a>
         </nav>
 
         <header class="glass-header">

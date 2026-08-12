@@ -50,6 +50,36 @@ const timeAgo = (isoStr) => {
  * @param {number} pageSize  - Số dòng mỗi trang (mặc định 1000)
  * @returns {Promise<Array>} - Mảng toàn bộ dữ liệu
  */
+/**
+ * Wrapper có cache phía client dùng sessionStorage (TTL mặc định 5 phút).
+ * - Lần đầu: fetch từ Supabase và lưu vào sessionStorage.
+ * - Lần sau (trong cùng session, < TTL): đọc thẳng từ cache, không gọi mạng.
+ * - Gọi cachedFetch.clear(key) để xóa một key, hoặc cachedFetch.clearAll() để xóa tất cả.
+ * @param {string} cacheKey  - Khóa duy nhất cho kết quả này
+ * @param {string} viewName  - Tên view/bảng Supabase
+ * @param {string} query     - Query string bổ sung
+ * @param {number} ttlMs     - Thời gian sống cache (ms), mặc định 5 phút
+ */
+async function cachedFetch(cacheKey, viewName, query = '', ttlMs = 300000) {
+    const NS = 'tnc_cache_';
+    try {
+        const raw = sessionStorage.getItem(NS + cacheKey);
+        if (raw) {
+            const { data, ts } = JSON.parse(raw);
+            if (Date.now() - ts < ttlMs) return data;
+        }
+    } catch(_) {}
+    const data = await supabaseFetch(viewName, query);
+    try { sessionStorage.setItem(NS + cacheKey, JSON.stringify({ data, ts: Date.now() })); } catch(_) {}
+    return data;
+}
+cachedFetch.clear    = key  => { try { sessionStorage.removeItem('tnc_cache_' + key); } catch(_) {} };
+cachedFetch.clearAll = ()   => {
+    try {
+        Object.keys(sessionStorage).filter(k => k.startsWith('tnc_cache_')).forEach(k => sessionStorage.removeItem(k));
+    } catch(_) {}
+};
+
 async function supabaseFetch(viewName, query = '', pageSize = 1000) {
     const all = [];
     let from = 0;
