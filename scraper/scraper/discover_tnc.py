@@ -21,6 +21,10 @@ import argparse
 import re
 import sys
 
+# Windows console mặc định dùng cp1252 — ép sang UTF-8 để in được tiếng Việt.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from playwright.sync_api import sync_playwright
 
 from .brand import brand_of
@@ -192,6 +196,11 @@ def enrich_apple(items: list[dict]) -> None:
                 rich = (h1.inner_text() or "").strip() if h1 else ""
                 if rich and not apple_incomplete(derive_sku(rich, it.get("url"))):
                     it["name"] = rich
+                
+                # Trích xuất luôn shop_sku nếu có ở trang này
+                code_el = page.query_selector(".cr-review-star p b")
+                if code_el:
+                    it["shop_sku"] = (code_el.inner_text() or "").strip()
             except Exception:
                 pass
         browser.close()
@@ -208,7 +217,7 @@ def apply_flash_prices(items: list[dict]) -> None:
     todo = [it for it in items if it.get("has_promo") and it.get("in_stock") and it.get("url")]
     if not todo:
         return
-    print(f"  checking {len(todo)} promo product(s) for flash-sale (Giá cuối) prices...")
+    print(f"  checking {len(todo)} promo product(s) for flash-sale (Gia cuoi) prices...")
     updated = 0
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -230,11 +239,68 @@ def apply_flash_prices(items: list[dict]) -> None:
                     it["price"] = deal
                     it["is_flash_sale"] = True   # đánh dấu để lưu cờ vào price_history
                     updated += 1
+                
+                # Trích xuất luôn shop_sku nếu có ở trang này
+                code_el = page.query_selector(".cr-review-star p b")
+                if code_el:
+                    it["shop_sku"] = (code_el.inner_text() or "").strip()
             except Exception:
                 pass
         browser.close()
     if updated:
         print(f"  applied flash-sale price to {updated} product(s).")
+
+
+def enrich_shop_skus(items: list[dict]) -> None:
+    """Truy cập trang chi tiết sản phẩm bằng httpx để lấy Mã Sản phẩm (shop_sku)
+    và gán vào items. Chỉ request các trang chưa được crawl bởi enrich_apple hoặc apply_flash_prices.
+    """
+    todo = [it for it in items if it.get("url") and "shop_sku" not in it]
+    if not todo:
+        return
+    print(f"  fetching {len(todo)} product page(s) for TNC internal code (Ma san pham)...")
+    
+    import httpx
+    from bs4 import BeautifulSoup
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    }
+    
+    success = 0
+    with httpx.Client(headers=headers, timeout=15) as client:
+        for it in todo:
+            try:
+                resp = client.get(it["url"])
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.text, "html.parser")
+                    
+                    code = None
+                    star_div = soup.select_one(".cr-review-star")
+                    if star_div:
+                        p_tag = star_div.find("p")
+                        if p_tag:
+                            text = p_tag.get_text(strip=True)
+                            match = re.search(r"M\u00e3\s+S\u1ea3n\s+ph\u1ea9m:\s*(.*)", text, re.IGNORECASE)
+                            if match:
+                                code = match.group(1).strip()
+                    
+                    if not code:
+                        for p in soup.find_all("p"):
+                            t = p.get_text(strip=True)
+                            if "M\u00e3 S\u1ea3n ph\u1ea9m:" in t:
+                                b_tag = p.find("b")
+                                if b_tag:
+                                    code = b_tag.get_text(strip=True)
+                                    break
+                    
+                    if code:
+                        it["shop_sku"] = code
+                        success += 1
+            except Exception:
+                pass
+                
+    print(f"  successfully retrieved shop_sku for {success}/{len(todo)} product(s).")
 
 
 def main() -> int:
@@ -259,9 +325,11 @@ def main() -> int:
     if args.category == "laptop" and args.brand == "apple":
         enrich_apple(found)
 
-    # Áp GIÁ CUỐI (flash sale) từ trang sản phẩm — chỉ cho sản phẩm có cờ khuyến mãi (xem
-    # apply_flash_prices). Chạy cả dry-run để in ra giá thật sẽ ghi.
+    # Áp GIÁ CUỐI (flash sale) từ trang sản phẩm
     apply_flash_prices(found)
+
+    # Cào bổ sung Mã Sản phẩm (shop_sku) từ trang chi tiết
+    enrich_shop_skus(found)
 
     category_label = args.category.capitalize()
     product_rows, source_rows, price_rows = [], [], []
@@ -288,10 +356,11 @@ def main() -> int:
         # In từng dòng sản phẩm CHỈ khi --dry (để kiểm tra tay); lúc chạy thật thì im lặng để dòng
         # THỐNG KÊ tổng kết ("Done. N sản phẩm...") nổi bật, không bị chôn giữa hàng trăm dòng.
         if args.dry:
-            flag = f"{price:,} VND" if in_stock else "HẾT HÀNG (Liên hệ)"
-            print(f"- {sku}: {flag}  ({display_name[:55]})")
+            flag = f"{price:,} VND" if in_stock else "HET HANG (Lien he)"
+            code_str = f" [Ma: {item.get('shop_sku')}]" if item.get('shop_sku') else ""
+            print(f"- {sku}{code_str}: {flag}  ({display_name[:55]})")
         product_rows.append(
-            {"sku": sku, "name": display_name, "brand": brand, "category": category_label}
+            {"sku": sku, "name": display_name, "brand": brand, "category": category_label, "shop_sku": item.get("shop_sku")}
         )
         fallback_url = BRANDS[args.brand].format(page=1) if args.category == "laptop" else None
         source_rows.append(
