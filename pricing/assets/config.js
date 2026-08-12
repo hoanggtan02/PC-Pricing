@@ -54,12 +54,27 @@ async function supabaseFetch(viewName, query = '', pageSize = 1000) {
     const all = [];
     let from = 0;
 
+    // Tách tên view và query sẵn có nếu có truyền viewName chứa sẵn ?
+    let cleanView = viewName;
+    let cleanQuery = query;
+    if (viewName.includes('?')) {
+        const parts = viewName.split('?');
+        cleanView = parts[0];
+        cleanQuery = parts[1] + (query ? '&' + query : '');
+    }
+
     while (true) {
-        const url = `${SUPABASE_URL}/rest/v1/${viewName}?${query}${query ? '&' : ''}limit=${pageSize}&offset=${from}`;
+        let url = `${SUPABASE_URL}/rest/v1/${cleanView}`;
+        const params = [];
+        if (cleanQuery) params.push(cleanQuery);
+        params.push(`limit=${pageSize}`);
+        params.push(`offset=${from}`);
+        url += '?' + params.join('&');
+
         const res = await fetch(url, { headers });
         if (!res.ok) {
             const errText = await res.text();
-            throw new Error(`Supabase lỗi [${res.status}] khi gọi ${viewName}: ${errText}`);
+            throw new Error(`Supabase lỗi [${res.status}] khi gọi ${cleanView}: ${errText}`);
         }
         const batch = await res.json();
         all.push(...batch);

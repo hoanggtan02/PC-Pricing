@@ -199,8 +199,8 @@ async function fetchDashboardData() {
             supabaseFetch('product_overview'),
             supabaseFetch('competitors', 'is_self=eq.false'),
             supabaseFetch('out_of_stock_gap_by_category'),
-            supabaseFetch('price_activity?order=week_start.desc'),
-            supabaseFetch('latest_prices_cache', 'select=refreshed_at&limit=1&order=refreshed_at.desc'),
+            supabaseFetch('price_activity', 'order=week_start.desc'),
+            supabaseFetch('latest_prices_cache', 'select=refreshed_at&order=refreshed_at.desc', 1),
         ]);
 
         allProducts = products;
