@@ -38,11 +38,15 @@ function renderCategoryTablePage(products) {
 
         const isSelected = p.sku === currentSelectedSku ? 'selected-row' : '';
 
+        const shopSkuBadge = p.shop_sku
+            ? `<span style="display:inline-block;margin-left:0.3rem;padding:1px 6px;background:rgba(1,79,43,0.08);border:1px solid rgba(1,79,43,0.2);border-radius:4px;font-size:0.7rem;font-weight:600;color:var(--accent);letter-spacing:0.02em">${p.shop_sku}</span>`
+            : '';
+
         return `
         <tr class="clickable-row ${isSelected}" data-sku="${p.sku}">
             <td>
                 <div style="font-weight:600;font-size:0.9rem;color:var(--text-main);">${truncate(p.product_name, 50)}</div>
-                <div style="font-size:0.75rem;color:var(--text-muted)">${p.sku} · ${p.brand} · ${p.category}</div>
+                <div style="font-size:0.75rem;color:var(--text-muted)">${p.sku} · ${p.brand} · ${p.category}${shopSkuBadge}</div>
             </td>
             <td style="font-weight:700">${formatVND(p.our_price)}</td>
             <td style="color:var(--green-500);font-weight:700">${formatVND(p.lowest_price)}</td>
@@ -86,6 +90,22 @@ async function selectProductRow(sku) {
     document.getElementById('detail-product-sku').textContent = p.sku;
     document.getElementById('detail-product-brand').textContent = p.brand;
     document.getElementById('detail-product-category').textContent = p.category;
+
+    // Hiển thị mã TNC nội bộ (shop_sku) nếu có
+    let shopSkuEl = document.getElementById('detail-shop-sku');
+    if (p.shop_sku) {
+        if (!shopSkuEl) {
+            shopSkuEl = document.createElement('span');
+            shopSkuEl.id = 'detail-shop-sku';
+            shopSkuEl.title = 'Mã sản phẩm nội bộ TNC';
+            shopSkuEl.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:rgba(1,79,43,0.1);border:1px solid rgba(1,79,43,0.25);border-radius:5px;font-size:0.75rem;font-weight:700;color:var(--accent);';
+            document.getElementById('detail-product-sku').after(shopSkuEl);
+        }
+        shopSkuEl.innerHTML = `<i class="bi bi-tag-fill" style="font-size:0.7rem"></i> ${p.shop_sku}`;
+        shopSkuEl.style.display = 'inline-flex';
+    } else if (shopSkuEl) {
+        shopSkuEl.style.display = 'none';
+    }
 
     // Chi tiết giá cửa hàng (từ JSON prices_by_store)
     const storesBody = document.getElementById('detail-stores-body');
@@ -354,7 +374,9 @@ function applyFilters() {
 
     if (q) {
         filteredProducts = filteredProducts.filter(p =>
-            p.product_name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+            p.product_name.toLowerCase().includes(q) ||
+            p.sku.toLowerCase().includes(q) ||
+            (p.shop_sku && p.shop_sku.toLowerCase().includes(q))
         );
     }
     if (cat !== 'all') {
