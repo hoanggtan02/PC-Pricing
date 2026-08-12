@@ -114,6 +114,29 @@
 
             <div class="glass-card table-section">
                 <div class="section-header">
+                    <h2><i class="bi bi-slash-circle-fill" style="color:var(--yellow-500)"></i> Ta hết hàng, đối thủ còn hàng (Cơ hội mất bán)</h2>
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tên sản phẩm</th>
+                                <th>SKU</th>
+                                <th>Đối thủ còn hàng</th>
+                                <th>Rẻ nhất</th>
+                                <th>Giá đối thủ</th>
+                                <th>Liên kết kiểm tra web</th>
+                            </tr>
+                        </thead>
+                        <tbody id="category-oos-body">
+                            <tr><td colspan="6" class="text-center">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="glass-card table-section">
+                <div class="section-header">
                     <h2><i class="bi bi-bar-chart-steps"></i> Độ phủ của từng đối thủ</h2>
                 </div>
                 <div id="coverage-container"><p class="text-center">Đang tải...</p></div>

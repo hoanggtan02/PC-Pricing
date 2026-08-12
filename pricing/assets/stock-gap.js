@@ -20,23 +20,25 @@ function renderGapTable(data) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>
-                <div style="font-weight:600">${row.product_name}</div>
+                <a href="product.php?sku=${encodeURIComponent(row.sku)}" style="font-weight:600;font-size:0.9rem;color:var(--text-main);text-decoration:none">
+                    ${row.product_name} <i class="bi bi-box-arrow-up-right" style="font-size:0.75rem;color:var(--accent)"></i>
+                </a>
                 <div style="font-size:0.75rem;color:var(--text-muted)">${row.sku}</div>
             </td>
             <td><span class="badge badge-neutral">${row.brand}</span></td>
             <td><span class="badge badge-neutral">${row.category}</span></td>
             <td>
-                <span class="badge badge-red" style="font-size:0.9rem">
-                    ${row.competitors_in_stock} đối thủ
+                <span class="badge badge-yellow" style="font-size:0.85rem">
+                    ${row.competitors_in_stock} đối thủ còn
                 </span>
             </td>
             <td style="font-weight:700;color:var(--green-500)">${formatVND(row.cheapest_competitor_price)}</td>
-            <td>${row.cheapest_competitor || '—'}</td>
+            <td><span class="badge badge-neutral">${row.cheapest_competitor || '—'}</span></td>
             <td>
-                ${row.cheapest_competitor_url
-                    ? `<a href="${row.cheapest_competitor_url}" target="_blank" class="badge badge-green" style="text-decoration:none">🔗 Xem</a>`
-                    : '—'
-                }
+                <div style="display:flex;gap:0.3rem">
+                    ${row.our_url ? `<a href="${row.our_url}" target="_blank" class="badge badge-neutral" style="text-decoration:none" title="Xác nhận trang Web TNC"><i class="bi bi-house"></i> Web TNC</a>` : ''}
+                    ${row.cheapest_competitor_url ? `<a href="${row.cheapest_competitor_url}" target="_blank" class="badge badge-red" style="text-decoration:none" title="Mở web ${row.cheapest_competitor} xác nhận giá"><i class="bi bi-box-arrow-up-right"></i> Web Đối Thủ</a>` : ''}
+                </div>
             </td>
         `;
         tbody.appendChild(tr);

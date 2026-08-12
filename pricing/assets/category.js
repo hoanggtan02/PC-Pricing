@@ -30,7 +30,9 @@ function renderCategoryTable(products) {
         return `
         <tr>
             <td>
-                <div style="font-weight:600;font-size:0.9rem">${truncate(p.product_name, 55)}</div>
+                <a href="product.php?sku=${encodeURIComponent(p.sku)}" style="font-weight:600;font-size:0.9rem;color:var(--text-main);text-decoration:none" class="product-link">
+                    ${truncate(p.product_name, 55)} <i class="bi bi-box-arrow-up-right" style="font-size:0.75rem;color:var(--accent)"></i>
+                </a>
                 <div style="font-size:0.75rem;color:var(--text-muted)">${p.sku}</div>
             </td>
             <td><span class="badge badge-neutral">${p.brand}</span></td>
@@ -38,7 +40,7 @@ function renderCategoryTable(products) {
             <td style="color:var(--green-500);font-weight:700">${formatVND(p.lowest_price)}</td>
             <td>${p.cheapest_competitor || '—'}</td>
             <td>${priceDiffBadge}</td>
-            <td style="color:var(--text-muted);font-size:0.8rem">${p.num_sources || 0} nguồn</td>
+            <td><a href="product.php?sku=${encodeURIComponent(p.sku)}" class="badge badge-neutral" style="text-decoration:none"><i class="bi bi-search"></i> So sánh (${p.num_sources || 0})</a></td>
         </tr>`;
     }).join('');
 }
@@ -90,6 +92,37 @@ function renderCoverageTable(coverageData) {
         </table>`;
 }
 
+// ── Render bảng Hết hàng đối thủ còn ────────────────────────────────
+function renderOosTable(oosList) {
+    const tbody = document.getElementById('category-oos-body');
+    if (!tbody) return;
+
+    if (oosList.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">🎉 Không có sản phẩm nào TNC hết hàng mà đối thủ còn!</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = oosList.map(r => `
+        <tr>
+            <td>
+                <a href="product.php?sku=${encodeURIComponent(r.sku)}" style="font-weight:600;font-size:0.9rem;color:var(--text-main);text-decoration:none">
+                    ${truncate(r.product_name, 50)} <i class="bi bi-box-arrow-up-right" style="font-size:0.75rem;color:var(--accent)"></i>
+                </a>
+            </td>
+            <td><span class="sku-tag">${r.sku}</span></td>
+            <td><span class="badge badge-yellow">${r.competitors_in_stock} cửa hàng</span></td>
+            <td><span class="badge badge-neutral">${r.cheapest_competitor || '—'}</span></td>
+            <td style="font-weight:700;color:var(--green-500)">${r.cheapest_competitor_price ? formatVND(r.cheapest_competitor_price) : '—'}</td>
+            <td>
+                <div style="display:flex;gap:0.3rem">
+                    ${r.our_url ? `<a href="${r.our_url}" target="_blank" class="badge badge-neutral" style="text-decoration:none"><i class="bi bi-house"></i> Web TNC</a>` : ''}
+                    ${r.cheapest_competitor_url ? `<a href="${r.cheapest_competitor_url}" target="_blank" class="badge badge-red" style="text-decoration:none"><i class="bi bi-box-arrow-up-right"></i> Web Đối Thủ</a>` : ''}
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
 // ── Fetch dữ liệu theo danh mục ──────────────────────────────────────
 async function fetchCategoryData(category) {
     try {
@@ -98,10 +131,12 @@ async function fetchCategoryData(category) {
 
         const encodedCat = encodeURIComponent(category);
 
-        const [products, coverage] = await Promise.all([
+        const [products, coverage, oosList] = await Promise.all([
             supabaseFetch('product_overview',
                 `category=ilike.${encodedCat}&select=sku,product_name,brand,our_price,lowest_price,cheapest_competitor,num_sources,pct_vs_mean&order=pct_vs_mean.desc.nullslast`),
             supabaseFetch('competitor_coverage_all',
+                `category=ilike.${encodedCat}`),
+            supabaseFetch('out_of_stock_gap',
                 `category=ilike.${encodedCat}`),
         ]);
 
@@ -125,6 +160,7 @@ async function fetchCategoryData(category) {
         document.getElementById('last-update').textContent = `Đang xem: ${category}`;
 
         renderCategoryTable(products);
+        renderOosTable(oosList);
         renderCoverageTable(coverage);
 
         document.getElementById('cr-overlay')?.classList.add('hidden');

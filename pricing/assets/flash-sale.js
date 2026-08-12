@@ -92,7 +92,9 @@ function renderFlashTable() {
 
         return `<tr>
             <td>
-                <div style="font-weight:600;font-size:0.9rem">${truncate(r.product_name, 50)}</div>
+                <a href="product.php?sku=${encodeURIComponent(r.sku)}" style="font-weight:600;font-size:0.9rem;color:var(--text-main);text-decoration:none">
+                    ${truncate(r.product_name, 50)} <i class="bi bi-box-arrow-up-right" style="font-size:0.75rem;color:var(--accent)"></i>
+                </a>
                 <div style="font-size:0.75rem;color:var(--text-muted)">${r.sku} · ${r.brand}</div>
             </td>
             <td><span class="badge badge-neutral">${r.competitor}</span></td>

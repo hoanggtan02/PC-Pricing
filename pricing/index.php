@@ -306,7 +306,9 @@
                             return `
                             <tr>
                                 <td>
-                                    <div style="font-weight:600;font-size:0.9rem">${truncate(p.product_name, 55)}</div>
+                                    <a href="product.php?sku=${encodeURIComponent(p.sku)}" style="font-weight:600;font-size:0.9rem;color:var(--text-main);text-decoration:none" class="product-link">
+                                        ${truncate(p.product_name, 55)} <i class="bi bi-box-arrow-up-right" style="font-size:0.75rem;color:var(--accent)"></i>
+                                    </a>
                                     <div style="font-size:0.75rem;color:var(--text-muted)">${p.sku} · ${p.brand}</div>
                                 </td>
                                 <td><span class="badge badge-neutral">${getCategoryName(p.category)}</span></td>
@@ -317,7 +319,7 @@
                                     <span class="badge badge-red">+${formatVND(diff)}</span>
                                     <div style="font-size:0.75rem;color:var(--red-500);margin-top:2px">+${diffPct}%</div>
                                 </td>
-                                <td style="color:var(--text-muted);font-size:0.8rem">${p.num_sources || '—'} nguồn</td>
+                                <td><a href="product.php?sku=${encodeURIComponent(p.sku)}" class="badge badge-neutral" style="text-decoration:none"><i class="bi bi-search"></i> So sánh (${p.num_sources || 0})</a></td>
                             </tr>`;
                         }).join('');
                     }
@@ -335,7 +337,7 @@
                     });
                 }
 
-                if (lastUpdate) lastUpdate.innerHTML = `<i class="bi bi-check-circle"></i> Đã kết nối Supabase`;
+                if (lastUpdate) lastUpdate.innerHTML = `<i class="bi bi-check-circle"></i> Cập nhật lần cuối: ${new Date().toLocaleString('vi-VN')}`;
 
                 // Ẩn màn hình chờ Loading Overlay
                 window.hideLoader?.();

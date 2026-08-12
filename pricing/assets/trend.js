@@ -31,9 +31,11 @@ function renderTrendTable(data) {
                 : `<span class="badge badge-neutral">0%</span>`;
 
         const name = productNames[r.product_sku]
-            ? `<div style="font-weight:600;font-size:0.9rem">${truncate(productNames[r.product_sku], 50)}</div>
+            ? `<a href="product.php?sku=${encodeURIComponent(r.product_sku)}" style="font-weight:600;font-size:0.9rem;color:var(--text-main);text-decoration:none">
+                ${truncate(productNames[r.product_sku], 50)} <i class="bi bi-box-arrow-up-right" style="font-size:0.75rem;color:var(--accent)"></i>
+               </a>
                <div style="font-size:0.75rem;color:var(--text-muted)">${r.product_sku}</div>`
-            : `<div style="font-size:0.85rem;color:var(--text-muted)">${r.product_sku}</div>`;
+            : `<a href="product.php?sku=${encodeURIComponent(r.product_sku)}" style="font-size:0.85rem;color:var(--accent);text-decoration:none">${r.product_sku} <i class="bi bi-box-arrow-up-right"></i></a>`;
 
         const isSelf = r.competitor === 'Thành Nhân' || r.is_self;
 

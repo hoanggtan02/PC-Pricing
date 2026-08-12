@@ -86,8 +86,8 @@ async function loadProduct(sku) {
 
     try {
         const [rows, trends] = await Promise.all([
-            supabaseFetch('product_overview', `sku=eq.${encodeURIComponent(sku)}&select=*`),
-            supabaseFetch('sku_price_trend_7d', `product_sku=eq.${encodeURIComponent(sku)}&order=changes.desc`),
+            supabaseFetch('product_overview', `sku=ilike.${encodeURIComponent(sku)}&select=*`),
+            supabaseFetch('sku_price_trend_7d', `product_sku=ilike.${encodeURIComponent(sku)}&order=changes.desc`),
         ]);
 
         if (rows.length === 0) {
@@ -95,6 +95,7 @@ async function loadProduct(sku) {
             document.getElementById('product-detail').style.display = 'none';
             document.getElementById('last-update').innerHTML =
                 `<i class="bi bi-exclamation-circle"></i> Không tìm thấy SKU: ${sku}`;
+            window.hideLoader?.();
             return;
         }
 
@@ -220,10 +221,13 @@ async function loadProduct(sku) {
         document.getElementById('last-update').innerHTML =
             `<i class="bi bi-check-circle"></i> ${p.product_name}`;
 
+        window.hideLoader?.();
+
     } catch (err) {
         console.error(err);
         document.getElementById('product-price-table').innerHTML =
             `<tr><td colspan="6" class="text-center highlight-red">❌ Lỗi: ${err.message}</td></tr>`;
+        window.hideLoader?.();
     }
 }
 

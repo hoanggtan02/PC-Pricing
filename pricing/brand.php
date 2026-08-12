@@ -114,6 +114,18 @@
 
             <div class="glass-card table-section">
                 <div class="section-header">
+                    <div>
+                        <h2><i class="bi bi-shop"></i> Chi tiết giá & Link Web từng đối thủ</h2>
+                        <p class="section-subtitle" style="font-size:0.82rem;color:var(--text-muted)">Click tên cửa hàng để mở trực tiếp link web đối thủ kiểm tra giá thực tế. Cột "Đổi giá 7 ngày" cho biết xu hướng đổi giá.</p>
+                    </div>
+                </div>
+                <div id="brand-store-breakdown-container">
+                    <p class="text-center">Đang tải chi tiết cửa hàng...</p>
+                </div>
+            </div>
+
+            <div class="glass-card table-section">
+                <div class="section-header">
                     <h2><i class="bi bi-bar-chart-steps"></i> Độ phủ của từng đối thủ</h2>
                 </div>
                 <div id="brand-coverage-container"><p class="text-center">Đang tải...</p></div>
