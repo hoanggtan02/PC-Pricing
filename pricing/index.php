@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 // PC Pricing Dashboard - Trang Chủ Tổng Quan (PHP + Vanilla JS)
 ?>
 <!DOCTYPE html>
@@ -43,16 +43,15 @@
     </div>
 
     <div class="app-container">
-        <nav class="nav-menu">
+                <nav class="nav-menu">
             <a href="index.php" class="active"><i class="bi bi-speedometer2"></i> Tổng quan</a>
-            <a href="category.php"><i class="bi bi-grid-3x3-gap"></i> Theo Danh Mục</a>
-            <a href="brand.php"><i class="bi bi-tags"></i> Theo Thương Hiệu</a>
+            <a href="category.php"><i class="bi bi-funnel"></i> Bộ Lọc Chi Tiết</a>
             <a href="stock-gap.php"><i class="bi bi-box-seam"></i> Khoảng Trống Hàng</a>
             <a href="price-activity.php"><i class="bi bi-graph-up-arrow"></i> Biến Động Giá</a>
             <a href="trend.php"><i class="bi bi-activity"></i> Xu Hướng 7 Ngày</a>
             <a href="product.php"><i class="bi bi-search"></i> Chi Tiết SP</a>
             <a href="flash-sale.php"><i class="bi bi-lightning-charge"></i> Flash Sale</a>
-            <a href="data-manager.php"><i class="bi bi-database-gear"></i> Quan Ly DL</a>
+            <a href="data-manager.php"><i class="bi bi-database-gear"></i> Quản Lý DL</a>
         </nav>
 
         <header class="glass-header">
@@ -146,6 +145,7 @@
                             <tr><td colspan="7" class="text-center">Đang tải dữ liệu...</td></tr>
                         </tbody>
                     </table>
+                    <div id="index-table-pagination" class="pagination-bar"></div>
                 </div>
             </div>
         </main>
@@ -153,6 +153,7 @@
 
     <script src="assets/config.js?v=10001"></script>
     <script src="assets/loader.js"></script>
+    <script src="assets/pagination.js"></script>
     <script>
     (function() {
         console.log("🔥 Direct script running on index.php");
@@ -172,6 +173,48 @@
         const getCategoryIcon = cat => CATEGORY_DISPLAY[cat.toLowerCase()]?.icon ?? 'bi-grid';
 
         let homepageChart = null;
+        let homepagePaginator;
+        let allBeatenProducts = [];
+        let activeBrandFilter = 'all';
+
+        function renderBeatenTablePage(items) {
+            const tbody = document.getElementById('table-body');
+            if (!tbody) return;
+            if (items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center">🎉 Tuyệt vời! Không có sản phẩm nào bị đối thủ bán rẻ hơn.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = items.map(p => {
+                const diff = p.our_price - p.lowest_price;
+                const diffPct = ((diff / p.lowest_price) * 100).toFixed(1);
+                return `
+                <tr>
+                    <td>
+                        <a href="product.php?sku=${encodeURIComponent(p.sku)}" style="font-weight:600;font-size:0.9rem;color:var(--text-main);text-decoration:none" class="product-link">
+                            ${truncate(p.product_name, 55)} <i class="bi bi-box-arrow-up-right" style="font-size:0.75rem;color:var(--accent)"></i>
+                        </a>
+                        <div style="font-size:0.75rem;color:var(--text-muted)">${p.sku} · ${p.brand}</div>
+                    </td>
+                    <td><span class="badge badge-neutral">${getCategoryName(p.category)}</span></td>
+                    <td style="font-weight:700">${formatVND(p.our_price)}</td>
+                    <td style="color:var(--green-500);font-weight:700">${formatVND(p.lowest_price)}</td>
+                    <td><span class="badge badge-green">${p.cheapest_competitor || '—'}</span></td>
+                    <td>
+                        <span class="badge badge-red">+${formatVND(diff)}</span>
+                        <div style="font-size:0.75rem;color:var(--red-500);margin-top:2px">+${diffPct}%</div>
+                    </td>
+                    <td><a href="product.php?sku=${encodeURIComponent(p.sku)}" class="badge badge-neutral" style="text-decoration:none"><i class="bi bi-search"></i> So sánh (${p.num_sources || 0})</a></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function applyFilters() {
+            let filtered = allBeatenProducts;
+            if (activeBrandFilter !== 'all') {
+                filtered = filtered.filter(p => p.brand === activeBrandFilter);
+            }
+            homepagePaginator.setData(filtered);
+        }
 
         async function initHomepage() {
             try {
@@ -292,49 +335,32 @@
                 }
 
                 // 4. Bảng cần chú ý
-                const tbody = document.getElementById('table-body');
-                if (tbody) {
-                    const needsAttention = products
-                        .filter(p => p.our_price && p.lowest_price && p.our_price > p.lowest_price)
-                        .sort((a, b) => (b.our_price - b.lowest_price) / b.lowest_price - (a.our_price - a.lowest_price) / a.lowest_price);
+                allBeatenProducts = products
+                    .filter(p => p.our_price && p.lowest_price && p.our_price > p.lowest_price)
+                    .sort((a, b) => (b.our_price - b.lowest_price) / b.lowest_price - (a.our_price - a.lowest_price) / a.lowest_price);
 
-                    if (needsAttention.length === 0) {
-                        tbody.innerHTML = `<tr><td colspan="7" class="text-center">🎉 Tuyệt vời! Không có sản phẩm nào bị đối thủ bán rẻ hơn.</td></tr>`;
-                    } else {
-                        tbody.innerHTML = needsAttention.map(p => {
-                            const diff = p.our_price - p.lowest_price;
-                            const diffPct = ((diff / p.lowest_price) * 100).toFixed(1);
-                            return `
-                            <tr>
-                                <td>
-                                    <a href="product.php?sku=${encodeURIComponent(p.sku)}" style="font-weight:600;font-size:0.9rem;color:var(--text-main);text-decoration:none" class="product-link">
-                                        ${truncate(p.product_name, 55)} <i class="bi bi-box-arrow-up-right" style="font-size:0.75rem;color:var(--accent)"></i>
-                                    </a>
-                                    <div style="font-size:0.75rem;color:var(--text-muted)">${p.sku} · ${p.brand}</div>
-                                </td>
-                                <td><span class="badge badge-neutral">${getCategoryName(p.category)}</span></td>
-                                <td style="font-weight:700">${formatVND(p.our_price)}</td>
-                                <td style="color:var(--green-500);font-weight:700">${formatVND(p.lowest_price)}</td>
-                                <td><span class="badge badge-green">${p.cheapest_competitor || '—'}</span></td>
-                                <td>
-                                    <span class="badge badge-red">+${formatVND(diff)}</span>
-                                    <div style="font-size:0.75rem;color:var(--red-500);margin-top:2px">+${diffPct}%</div>
-                                </td>
-                                <td><a href="product.php?sku=${encodeURIComponent(p.sku)}" class="badge badge-neutral" style="text-decoration:none"><i class="bi bi-search"></i> So sánh (${p.num_sources || 0})</a></td>
-                            </tr>`;
-                        }).join('');
-                    }
-                }
+                homepagePaginator = createPaginator({
+                    containerId: 'index-table-pagination',
+                    renderFn: renderBeatenTablePage,
+                    defaultSize: 25
+                });
+
+                applyFilters();
 
                 // Bộ lọc thương hiệu
                 const brandSelect = document.getElementById('brand-filter');
                 if (brandSelect) {
-                    const brands = [...new Set(products.map(p => p.brand))].sort();
+                    brandSelect.innerHTML = '<option value="all">Tất cả thương hiệu</option>';
+                    const brands = [...new Set(allBeatenProducts.map(p => p.brand))].sort();
                     brands.forEach(b => {
                         const opt = document.createElement('option');
                         opt.value = b;
                         opt.textContent = b;
                         brandSelect.appendChild(opt);
+                    });
+                    brandSelect.addEventListener('change', (e) => {
+                        activeBrandFilter = e.target.value;
+                        applyFilters();
                     });
                 }
 

@@ -42,16 +42,15 @@
     </div>
 
     <div class="app-container">
-        <nav class="nav-menu">
+                <nav class="nav-menu">
             <a href="index.php"><i class="bi bi-speedometer2"></i> Tổng quan</a>
-            <a href="category.php"><i class="bi bi-grid-3x3-gap"></i> Theo Danh Mục</a>
-            <a href="brand.php"><i class="bi bi-tags"></i> Theo Thương Hiệu</a>
+            <a href="category.php"><i class="bi bi-funnel"></i> Bộ Lọc Chi Tiết</a>
             <a href="stock-gap.php" class="active"><i class="bi bi-box-seam"></i> Khoảng Trống Hàng</a>
             <a href="price-activity.php"><i class="bi bi-graph-up-arrow"></i> Biến Động Giá</a>
             <a href="trend.php"><i class="bi bi-activity"></i> Xu Hướng 7 Ngày</a>
             <a href="product.php"><i class="bi bi-search"></i> Chi Tiết SP</a>
             <a href="flash-sale.php"><i class="bi bi-lightning-charge"></i> Flash Sale</a>
-            <a href="data-manager.php"><i class="bi bi-database-gear"></i> Quan Ly DL</a>
+            <a href="data-manager.php"><i class="bi bi-database-gear"></i> Quản Lý DL</a>
         </nav>
 
         <header class="glass-header">
@@ -126,11 +125,13 @@
                             <tr><td colspan="7" class="text-center">Đang tải dữ liệu...</td></tr>
                         </tbody>
                     </table>
+                    <div id="gap-table-pagination" class="pagination-bar"></div>
                 </div>
             </div>
         </main>
     </div>
 
+    <script src="assets/pagination.js"></script>
     <script src="assets/config.js"></script>
     <script src="assets/loader.js"></script>
     <script src="assets/stock-gap.js"></script>

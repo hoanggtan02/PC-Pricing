@@ -1,5 +1,6 @@
 // =====================================================================
 // data-manager.js — Logic quản lý dữ liệu (Sources, Anomalies, Products, History)
+// Action Dropdown Menu (3 Dots) + Form Modal Popup + Phân Trang Tối Ưu
 // =====================================================================
 
 const DM = (() => {
@@ -9,8 +10,17 @@ const DM = (() => {
     let _latestPrices = []; // latest_prices_cache
     let _sourcesFiltered = [];
     let _productsFiltered = [];
+    let _historyFiltered  = [];
     let _histSkuSelected = '';
     let _modalCallback = null;
+    let _editSaveCallback = null;
+
+    // ── Pagination State ─────────────────────────────────────────────
+    const _pageState = {
+        sources: { current: 1, pageSize: 25 },
+        products: { current: 1, pageSize: 25 },
+        history:  { current: 1, pageSize: 25 }
+    };
 
     // ── Helpers ──────────────────────────────────────────────────────
     const $ = id => document.getElementById(id);
@@ -19,11 +29,30 @@ const DM = (() => {
         if (!iso) return '—';
         const d = Math.floor((Date.now() - new Date(iso)) / 1000);
         if (d < 60)  return `${d}s trước`;
-        if (d < 3600) return `${Math.floor(d/60)}p trước`;
+        if (d < 60*60) return `${Math.floor(d/60)}p trước`;
         if (d < 86400) return `${Math.floor(d/3600)}h trước`;
         return `${Math.floor(d/86400)} ngày trước`;
     };
     const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    // ── Action Menu Dropdown Toggle ──────────────────────────────────
+    function closeAllActionMenus() {
+        document.querySelectorAll('.action-dropdown-menu').forEach(m => m.style.display = 'none');
+    }
+
+    function toggleActionMenu(event, menuId) {
+        event.stopPropagation();
+        const menu = $(menuId);
+        if (!menu) return;
+        const isOpen = menu.style.display === 'flex';
+        closeAllActionMenus();
+        if (!isOpen) {
+            menu.style.display = 'flex';
+        }
+    }
+
+    // Auto close menus when clicking outside
+    document.addEventListener('click', () => closeAllActionMenus());
 
     // ── Toast ────────────────────────────────────────────────────────
     function toast(msg, type = 'success') {
@@ -36,7 +65,7 @@ const DM = (() => {
         setTimeout(() => el.remove(), 3500);
     }
 
-    // ── Modal ────────────────────────────────────────────────────────
+    // ── Confirm Modal ────────────────────────────────────────────────
     function showModal({ title, body, warn, confirmText = 'Xóa', confirmClass = 'btn-modal-confirm', onConfirm }) {
         $('modal-title').innerHTML = title;
         $('modal-body').innerHTML = body;
@@ -52,8 +81,25 @@ const DM = (() => {
     }
     function closeModal() { $('dm-modal-backdrop').style.display = 'none'; }
 
+    // ── Form Edit Modal Popup ────────────────────────────────────────
+    function openEditModal(titleHtml, bodyHtml, onSave) {
+        closeAllActionMenus();
+        $('edit-modal-title').innerHTML = titleHtml;
+        $('edit-modal-body').innerHTML = bodyHtml;
+        _editSaveCallback = onSave;
+        $('edit-modal-save-btn').onclick = async () => {
+            if (_editSaveCallback) {
+                const ok = await _editSaveCallback();
+                if (ok !== false) closeEditModal();
+            }
+        };
+        $('dm-edit-modal-backdrop').style.display = 'flex';
+    }
+    function closeEditModal() { $('dm-edit-modal-backdrop').style.display = 'none'; }
+
     // ── Tab switching ────────────────────────────────────────────────
     function switchTab(name) {
+        closeAllActionMenus();
         document.querySelectorAll('.dm-tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.dm-panel').forEach(p => p.classList.remove('active'));
         document.getElementById(`tab-btn-${name}`).classList.add('active');
@@ -80,30 +126,100 @@ const DM = (() => {
         if (!res.ok) throw new Error(await res.text());
     }
 
+    // ── Pagination Renderer Helper ───────────────────────────────────
+    function renderPaginationUI(containerId, stateKey, totalItems) {
+        const container = $(containerId);
+        if (!container) return;
+        if (totalItems <= 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const state = _pageState[stateKey];
+        const totalPages = Math.ceil(totalItems / state.pageSize);
+        if (state.current > totalPages) state.current = Math.max(1, totalPages);
+
+        const startItem = (state.current - 1) * state.pageSize + 1;
+        const endItem   = Math.min(totalItems, state.current * state.pageSize);
+
+        let pageBtns = '';
+        let startP = Math.max(1, state.current - 2);
+        let endP   = Math.min(totalPages, state.current + 2);
+
+        if (startP > 1) {
+            pageBtns += `<button class="page-btn" onclick="DM.setPage('${stateKey}', 1)">1</button>`;
+            if (startP > 2) pageBtns += `<span style="color:var(--text-muted)">…</span>`;
+        }
+        for (let p = startP; p <= endP; p++) {
+            pageBtns += `<button class="page-btn ${p === state.current ? 'active' : ''}" onclick="DM.setPage('${stateKey}', ${p})">${p}</button>`;
+        }
+        if (endP < totalPages) {
+            if (endP < totalPages - 1) pageBtns += `<span style="color:var(--text-muted)">…</span>`;
+            pageBtns += `<button class="page-btn" onclick="DM.setPage('${stateKey}', ${totalPages})">${totalPages}</button>`;
+        }
+
+        container.innerHTML = `
+            <div class="page-info">
+                Hiển thị <strong>${startItem} - ${endItem}</strong> / tổng <strong>${totalItems}</strong> dòng
+            </div>
+            <div class="pagination-controls">
+                <select class="page-size-select" onchange="DM.setPageSize('${stateKey}', this.value)">
+                    <option value="10" ${state.pageSize === 10 ? 'selected' : ''}>10 / trang</option>
+                    <option value="25" ${state.pageSize === 25 ? 'selected' : ''}>25 / trang</option>
+                    <option value="50" ${state.pageSize === 50 ? 'selected' : ''}>50 / trang</option>
+                    <option value="100" ${state.pageSize === 100 ? 'selected' : ''}>100 / trang</option>
+                </select>
+                <button class="page-btn" ${state.current <= 1 ? 'disabled' : ''} onclick="DM.setPage('${stateKey}', ${state.current - 1})">
+                    <i class="bi bi-chevron-left"></i> Trước
+                </button>
+                ${pageBtns}
+                <button class="page-btn" ${state.current >= totalPages ? 'disabled' : ''} onclick="DM.setPage('${stateKey}', ${state.current + 1})">
+                    Sau <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+        `;
+    }
+
+    function setPage(stateKey, pageNum) {
+        closeAllActionMenus();
+        _pageState[stateKey].current = pageNum;
+        if (stateKey === 'sources') renderSources();
+        else if (stateKey === 'products') renderProducts();
+        else if (stateKey === 'history') renderHistoryUI();
+    }
+
+    function setPageSize(stateKey, newSize) {
+        closeAllActionMenus();
+        _pageState[stateKey].pageSize = parseInt(newSize) || 25;
+        _pageState[stateKey].current = 1;
+        if (stateKey === 'sources') renderSources();
+        else if (stateKey === 'products') renderProducts();
+        else if (stateKey === 'history') renderHistoryUI();
+    }
+
     // ====================================================================
     // TAB 1 — SOURCES
     // ====================================================================
     async function loadSources() {
         $('sources-tbody').innerHTML = '<tr class="loading-row"><td colspan="8"><span class="spinner"></span> Đang tải...</td></tr>';
         try {
-            // Fetch sources joined with latest price
             const [srcData, lpData] = await Promise.all([
                 supabaseFetch('sources', 'select=product_sku,competitor,url,active,products(name)&order=competitor,product_sku'),
-                supabaseFetch('latest_prices_cache', 'select=sku,competitor,price,updated_at')
+                supabaseFetch('latest_prices_cache', 'select=sku,competitor,price,scraped_at')
             ]);
             _sources = srcData;
-            // Build price lookup
+
             const priceMap = {};
             lpData.forEach(r => { priceMap[`${r.sku}|||${r.competitor}`] = r; });
             _sources.forEach(s => { s._priceInfo = priceMap[`${s.product_sku}|||${s.competitor}`] || null; });
 
-            // Fill store filter
             const stores = [...new Set(_sources.map(s => s.competitor))].sort();
             const sf = $('src-filter-store');
             sf.innerHTML = '<option value="">Tất cả cửa hàng</option>' + stores.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
 
             $('tab-count-sources').textContent = _sources.length;
             $('sources-meta').textContent = `${_sources.length} nguồn tổng cộng`;
+            _pageState.sources.current = 1;
             filterSources();
         } catch(e) {
             $('sources-tbody').innerHTML = `<tr><td colspan="8" class="text-center" style="color:var(--red)"><i class="bi bi-x-circle"></i> Lỗi: ${esc(e.message)}</td></tr>`;
@@ -111,6 +227,7 @@ const DM = (() => {
     }
 
     function filterSources() {
+        closeAllActionMenus();
         const q   = $('src-search').value.toLowerCase();
         const st  = $('src-filter-store').value;
         const sta = $('src-filter-status').value;
@@ -121,74 +238,108 @@ const DM = (() => {
             const matchSta = !sta || (sta === 'active' ? s.active : !s.active);
             return matchQ && matchSt && matchSta;
         });
+        _pageState.sources.current = 1;
         renderSources();
     }
 
     function renderSources() {
         const tbody = $('sources-tbody');
-        if (!_sourcesFiltered.length) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center">Không tìm thấy nguồn nào</td></tr>'; return;
+        const total = _sourcesFiltered.length;
+        if (!total) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">Không tìm thấy nguồn nào</td></tr>';
+            renderPaginationUI('sources-pagination', 'sources', 0);
+            return;
         }
-        tbody.innerHTML = _sourcesFiltered.map(s => {
+
+        const state = _pageState.sources;
+        const start = (state.current - 1) * state.pageSize;
+        const pageItems = _sourcesFiltered.slice(start, start + state.pageSize);
+
+        tbody.innerHTML = pageItems.map(s => {
             const name = esc(s.products?.name || '—');
             const price = s._priceInfo ? fmt(s._priceInfo.price) : '—';
-            const updAt = s._priceInfo ? timeAgo(s._priceInfo.updated_at) : '—';
-            const shortUrl = s.url.length > 45 ? s.url.slice(0, 45) + '…' : s.url;
+            const updAt = s._priceInfo ? timeAgo(s._priceInfo.scraped_at) : '—';
+            const skuKey = `${s.product_sku}_${s.competitor}`.replace(/[^a-zA-Z0-9]/g, '_');
+
             return `<tr>
                 <td><a href="product.php?sku=${esc(s.product_sku)}" class="btn-ghost" style="font-family:'Exo 2',monospace;font-size:0.8rem">${esc(s.product_sku)}</a></td>
-                <td style="max-width:240px;font-size:0.85rem">${name}</td>
+                <td style="max-width:220px;font-size:0.85rem">${name}</td>
                 <td><span class="badge badge-neutral">${esc(s.competitor)}</span></td>
-                <td style="max-width:220px">
-                    <div id="url-view-${esc(s.product_sku)}-${esc(s.competitor)}" style="display:flex;align-items:center;gap:0.4rem">
-                        <a href="${esc(s.url)}" target="_blank" title="${esc(s.url)}" style="font-size:0.8rem;color:var(--accent);text-decoration:none;word-break:break-all">${esc(shortUrl)}</a>
-                        <button class="icon-btn icon-btn-edit" onclick="DM.startEditUrl('${esc(s.product_sku)}','${esc(s.competitor)}','${esc(s.url)}')" title="Sửa URL"><i class="bi bi-pencil"></i></button>
-                    </div>
-                    <div id="url-edit-${esc(s.product_sku)}-${esc(s.competitor)}" style="display:none;gap:0.4rem;align-items:center">
-                        <input class="inline-input" id="url-input-${esc(s.product_sku)}-${esc(s.competitor)}" value="${esc(s.url)}" style="min-width:260px">
-                        <button class="icon-btn icon-btn-save" onclick="DM.saveUrl('${esc(s.product_sku)}','${esc(s.competitor)}')"><i class="bi bi-check-lg"></i></button>
-                        <button class="icon-btn icon-btn-cancel" onclick="DM.cancelEditUrl('${esc(s.product_sku)}','${esc(s.competitor)}')"><i class="bi bi-x-lg"></i></button>
-                    </div>
+                <td class="url-cell">
+                    <a href="${esc(s.url)}" target="_blank" title="${esc(s.url)}">${esc(s.url)}</a>
                 </td>
-                <td style="white-space:nowrap;font-weight:600">${price}</td>
+                <td style="white-space:nowrap;font-weight:700">${price}</td>
                 <td style="white-space:nowrap;color:var(--text-muted);font-size:0.82rem">${updAt}</td>
                 <td style="text-align:center">
                     <input type="checkbox" class="toggle" ${s.active ? 'checked' : ''} onchange="DM.toggleActive('${esc(s.product_sku)}','${esc(s.competitor)}',this.checked)" title="${s.active ? 'Đang bật — click để tắt' : 'Đang tắt — click để bật'}">
                 </td>
-                <td>
-                    <div class="action-cell">
-                        <a href="${esc(s.url)}" target="_blank" class="btn-ghost"><i class="bi bi-box-arrow-up-right"></i> Mở web</a>
-                        <button class="btn-danger" onclick="DM.deleteSource('${esc(s.product_sku)}','${esc(s.competitor)}','${esc(s.products?.name||s.product_sku)}')"><i class="bi bi-trash"></i> Xóa</button>
+                <td style="text-align:center">
+                    <div class="action-dropdown-wrap">
+                        <button class="action-menu-btn" onclick="DM.toggleActionMenu(event, 'act_src_${skuKey}')" title="Tùy chọn">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <div id="act_src_${skuKey}" class="action-dropdown-menu" style="display:none">
+                            <button onclick="DM.openEditSourceModal('${esc(s.product_sku)}','${esc(s.competitor)}')">
+                                <i class="bi bi-pencil" style="color:var(--accent)"></i> Chỉnh sửa
+                            </button>
+                            <a href="${esc(s.url)}" target="_blank">
+                                <i class="bi bi-box-arrow-up-right" style="color:var(--gold)"></i> Mở website
+                            </a>
+                            <button onclick="DM.deleteSource('${esc(s.product_sku)}','${esc(s.competitor)}','${esc(s.products?.name||s.product_sku)}')" style="color:var(--red)">
+                                <i class="bi bi-trash"></i> Xóa nguồn
+                            </button>
+                        </div>
                     </div>
                 </td>
             </tr>`;
         }).join('');
+
+        renderPaginationUI('sources-pagination', 'sources', total);
     }
 
-    function startEditUrl(sku, competitor, currentUrl) {
-        const k = `${sku}-${competitor}`;
-        document.getElementById(`url-view-${k}`).style.display = 'none';
-        const editDiv = document.getElementById(`url-edit-${k}`);
-        editDiv.style.display = 'flex';
-        document.getElementById(`url-input-${k}`).focus();
-    }
-    function cancelEditUrl(sku, competitor) {
-        const k = `${sku}-${competitor}`;
-        document.getElementById(`url-view-${k}`).style.display = 'flex';
-        document.getElementById(`url-edit-${k}`).style.display = 'none';
-    }
-    async function saveUrl(sku, competitor) {
-        const k = `${sku}-${competitor}`;
-        const newUrl = document.getElementById(`url-input-${k}`).value.trim();
-        if (!newUrl) { toast('URL không được để trống', 'error'); return; }
-        try {
-            await sbPatch('sources', { product_sku: sku, competitor }, { url: newUrl });
-            // Update local state
-            const src = _sources.find(s => s.product_sku === sku && s.competitor === competitor);
-            if (src) src.url = newUrl;
-            cancelEditUrl(sku, competitor);
-            filterSources();
-            toast(`Đã cập nhật URL cho ${competitor} — ${sku}`, 'success');
-        } catch(e) { toast('Lỗi cập nhật: ' + e.message, 'error'); }
+    // Modal Popup chỉnh sửa Nguồn cào giá
+    function openEditSourceModal(sku, competitor) {
+        const src = _sources.find(s => s.product_sku === sku && s.competitor === competitor);
+        if (!src) return;
+
+        const titleHtml = `<i class="bi bi-link-45deg"></i> Chỉnh Sửa Nguồn Cào Giá`;
+        const bodyHtml = `
+            <div class="modal-form-group">
+                <label>Sản phẩm (SKU & Tên)</label>
+                <input class="modal-form-input" value="[${esc(sku)}] ${esc(src.products?.name || '')}" readonly>
+            </div>
+            <div class="modal-form-group">
+                <label>Cửa hàng đối thủ</label>
+                <input class="modal-form-input" value="${esc(competitor)}" readonly>
+            </div>
+            <div class="modal-form-group">
+                <label>Đường dẫn URL cào giá (*)</label>
+                <textarea class="modal-form-input" id="edit-src-url" rows="3" style="font-family:monospace;font-size:0.83rem">${esc(src.url)}</textarea>
+            </div>
+            <div class="modal-form-group">
+                <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;margin-top:0.2rem">
+                    <input type="checkbox" class="toggle" id="edit-src-active" ${src.active ? 'checked' : ''}>
+                    <span>Kích hoạt cào giá (Active)</span>
+                </label>
+            </div>
+        `;
+
+        openEditModal(titleHtml, bodyHtml, async () => {
+            const newUrl = $('edit-src-url').value.trim();
+            const isActive = $('edit-src-active').checked;
+            if (!newUrl) { toast('URL không được để trống', 'error'); return false; }
+            try {
+                await sbPatch('sources', { product_sku: sku, competitor }, { url: newUrl, active: isActive });
+                src.url = newUrl;
+                src.active = isActive;
+                renderSources();
+                toast(`Đã cập nhật nguồn ${competitor} cho SKU ${sku}`, 'success');
+                return true;
+            } catch(e) {
+                toast('Lỗi cập nhật: ' + e.message, 'error');
+                return false;
+            }
+        });
     }
 
     async function toggleActive(sku, competitor, active) {
@@ -199,12 +350,12 @@ const DM = (() => {
             toast(`${active ? '✅ Đã bật' : '❌ Đã tắt'} nguồn ${competitor} — ${sku}`, active ? 'success' : 'warn');
         } catch(e) {
             toast('Lỗi cập nhật: ' + e.message, 'error');
-            // Revert UI
-            filterSources();
+            renderSources();
         }
     }
 
     function deleteSource(sku, competitor, productName) {
+        closeAllActionMenus();
         showModal({
             title: '<i class="bi bi-trash"></i> Xóa nguồn cào giá',
             body: `Xóa hoàn toàn nguồn <strong>${esc(competitor)}</strong> cho sản phẩm:<br><em>${esc(productName)}</em> (SKU: <code>${esc(sku)}</code>)?<br><br>Toàn bộ lịch sử giá của cửa hàng này cho sản phẩm này sẽ bị xóa.`,
@@ -231,7 +382,7 @@ const DM = (() => {
             s.competitor,
             s.url,
             s._priceInfo?.price || '',
-            s._priceInfo?.updated_at || '',
+            s._priceInfo?.scraped_at || '',
             s.active ? 'true' : 'false'
         ]));
         downloadCSV(rows, 'sources.csv');
@@ -266,7 +417,7 @@ const DM = (() => {
             }).join('');
         }
 
-        // 2. Giá bất thường (từ latest_prices_cache)
+        // 2. Giá bất thường
         const badPrices = _latestPrices.filter(r => r.price === 0 || r.price < 0 || r.price > 200000000);
         totalIssues += badPrices.length;
         const priceTbody = $('anomaly-price-tbody');
@@ -283,7 +434,7 @@ const DM = (() => {
                     <td style="font-size:0.85rem">${esc(prod?.name||'—')}</td>
                     <td><span class="badge badge-neutral">${esc(r.competitor)}</span></td>
                     <td style="font-weight:700;color:var(--red)">${fmt(r.price)}</td>
-                    <td style="font-size:0.82rem;color:var(--text-muted)">${timeAgo(r.updated_at)}</td>
+                    <td style="font-size:0.82rem;color:var(--text-muted)">${timeAgo(r.scraped_at)}</td>
                     <td>
                         <div class="action-cell">
                             <button class="btn-danger" onclick="DM.deleteSource('${esc(r.sku)}','${esc(r.competitor)}','${esc(prod?.name||r.sku)}')">
@@ -327,12 +478,11 @@ const DM = (() => {
         try {
             const [prodData, lpData] = await Promise.all([
                 supabaseFetch('products', 'select=sku,name,brand,category&order=name'),
-                supabaseFetch('latest_prices_cache', 'select=sku,competitor,price,is_self')
+                supabaseFetch('latest_prices_cache', 'select=sku,competitor,price,is_self,scraped_at')
             ]);
             _products = prodData;
             _latestPrices = lpData;
 
-            // Build price & source count maps
             const selfPriceMap = {};
             const srcCountMap  = {};
             lpData.forEach(r => {
@@ -344,7 +494,6 @@ const DM = (() => {
                 p._srcCount   = srcCountMap[p.sku]  ?? 0;
             });
 
-            // Fill filters
             const cats   = [...new Set(_products.map(p=>p.category).filter(Boolean))].sort();
             const brands = [...new Set(_products.map(p=>p.brand).filter(Boolean))].sort();
             $('prod-filter-cat').innerHTML   = '<option value="">Tất cả danh mục</option>' + cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -353,10 +502,10 @@ const DM = (() => {
             $('tab-count-products').textContent = _products.length;
             $('products-meta').textContent = `${_products.length} sản phẩm`;
 
-            // Also fill history store dropdown from sources
             const histStores = [...new Set(_sources.map(s=>s.competitor))].sort();
             $('hist-store').innerHTML = '<option value="">Tất cả cửa hàng</option>' + histStores.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('');
 
+            _pageState.products.current = 1;
             filterProducts();
             detectAnomalies();
         } catch(e) {
@@ -365,6 +514,7 @@ const DM = (() => {
     }
 
     function filterProducts() {
+        closeAllActionMenus();
         const q  = $('prod-search').value.toLowerCase();
         const ca = $('prod-filter-cat').value;
         const br = $('prod-filter-brand').value;
@@ -374,77 +524,117 @@ const DM = (() => {
             const matchBr = !br || p.brand === br;
             return matchQ && matchCa && matchBr;
         });
+        _pageState.products.current = 1;
         renderProducts();
     }
 
     function renderProducts() {
         const tbody = $('products-tbody');
-        if (!_productsFiltered.length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center">Không tìm thấy sản phẩm</td></tr>'; return;
+        const total = _productsFiltered.length;
+        if (!total) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">Không tìm thấy sản phẩm</td></tr>';
+            renderPaginationUI('products-pagination', 'products', 0);
+            return;
         }
+
+        const state = _pageState.products;
+        const start = (state.current - 1) * state.pageSize;
+        const pageItems = _productsFiltered.slice(start, start + state.pageSize);
+
         const isSuspect = p => String(p.sku||'').length < 5 || /^\d+$/.test(String(p.sku||''));
-        tbody.innerHTML = _productsFiltered.map(p => {
+        tbody.innerHTML = pageItems.map(p => {
             const skuClass = isSuspect(p) ? 'sku-suspect' : '';
             const suspect  = isSuspect(p) ? `<span class="anomaly-badge" style="margin-left:0.4rem"><i class="bi bi-exclamation-triangle"></i> SKU nghi vấn</span>` : '';
             const srcBadge = p._srcCount > 0
                 ? `<span class="badge badge-green">${p._srcCount} nguồn</span>`
                 : `<span class="badge badge-red">Không có nguồn</span>`;
+            const skuKey   = p.sku.replace(/[^a-zA-Z0-9]/g, '_');
+
             return `<tr>
                 <td>
-                    <div id="sku-view-${esc(p.sku)}" style="display:flex;align-items:center;gap:0.35rem">
+                    <div style="display:flex;align-items:center;gap:0.35rem">
                         <span class="${skuClass}" style="font-family:'Exo 2',monospace;font-size:0.85rem">${esc(p.sku)}</span>
                         ${suspect}
                     </div>
                 </td>
-                <td style="max-width:280px">
-                    <div id="name-view-${esc(p.sku)}" style="display:flex;align-items:center;gap:0.35rem">
-                        <span style="font-size:0.88rem">${esc(p.name||'—')}</span>
-                        <button class="icon-btn icon-btn-edit" onclick="DM.startEditName('${esc(p.sku)}','${esc(p.name||'')}')" title="Sửa tên"><i class="bi bi-pencil"></i></button>
-                    </div>
-                    <div id="name-edit-${esc(p.sku)}" style="display:none;gap:0.4rem;align-items:center">
-                        <input class="inline-input" id="name-input-${esc(p.sku)}" value="${esc(p.name||'')}">
-                        <button class="icon-btn icon-btn-save" onclick="DM.saveName('${esc(p.sku)}')"><i class="bi bi-check-lg"></i></button>
-                        <button class="icon-btn icon-btn-cancel" onclick="DM.cancelEditName('${esc(p.sku)}')"><i class="bi bi-x-lg"></i></button>
-                    </div>
-                </td>
+                <td style="max-width:280px;font-size:0.88rem">${esc(p.name||'—')}</td>
                 <td style="font-size:0.85rem">${esc(p.category||'—')}</td>
                 <td style="font-size:0.85rem">${esc(p.brand||'—')}</td>
-                <td style="white-space:nowrap;font-weight:600">${p._selfPrice ? fmt(p._selfPrice) : '<span style="color:var(--text-muted)">—</span>'}</td>
+                <td style="white-space:nowrap;font-weight:700">${p._selfPrice ? fmt(p._selfPrice) : '<span style="color:var(--text-muted)">—</span>'}</td>
                 <td>${srcBadge}</td>
-                <td>
-                    <div class="action-cell">
-                        <a href="product.php?sku=${esc(p.sku)}" class="btn-ghost"><i class="bi bi-search"></i> Xem</a>
-                        <button class="btn-danger" onclick="DM.deleteProduct('${esc(p.sku)}','${esc(p.name||p.sku)}')"><i class="bi bi-trash"></i></button>
+                <td style="text-align:center">
+                    <div class="action-dropdown-wrap">
+                        <button class="action-menu-btn" onclick="DM.toggleActionMenu(event, 'act_prod_${skuKey}')" title="Tùy chọn">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <div id="act_prod_${skuKey}" class="action-dropdown-menu" style="display:none">
+                            <button onclick="DM.openEditProductModal('${esc(p.sku)}')">
+                                <i class="bi bi-pencil" style="color:var(--accent)"></i> Chỉnh sửa
+                            </button>
+                            <a href="product.php?sku=${esc(p.sku)}">
+                                <i class="bi bi-search" style="color:var(--gold)"></i> Xem chi tiết
+                            </a>
+                            <button onclick="DM.deleteProduct('${esc(p.sku)}','${esc(p.name||p.sku)}')" style="color:var(--red)">
+                                <i class="bi bi-trash"></i> Xóa sản phẩm
+                            </button>
+                        </div>
                     </div>
                 </td>
             </tr>`;
         }).join('');
+
+        renderPaginationUI('products-pagination', 'products', total);
     }
 
-    function startEditName(sku, currentName) {
-        document.getElementById(`name-view-${sku}`).style.display = 'none';
-        const ed = document.getElementById(`name-edit-${sku}`);
-        ed.style.display = 'flex';
-        document.getElementById(`name-input-${sku}`).focus();
-    }
-    function cancelEditName(sku) {
-        document.getElementById(`name-view-${sku}`).style.display = 'flex';
-        document.getElementById(`name-edit-${sku}`).style.display = 'none';
-    }
-    async function saveName(sku) {
-        const newName = document.getElementById(`name-input-${sku}`).value.trim();
-        if (!newName) { toast('Tên không được để trống', 'error'); return; }
-        try {
-            await sbPatch('products', { sku }, { name: newName });
-            const prod = _products.find(p => p.sku === sku);
-            if (prod) prod.name = newName;
-            cancelEditName(sku);
-            filterProducts();
-            toast(`Đã cập nhật tên sản phẩm ${sku}`, 'success');
-        } catch(e) { toast('Lỗi cập nhật: ' + e.message, 'error'); }
+    // Modal Popup chỉnh sửa Sản phẩm
+    function openEditProductModal(sku) {
+        const prod = _products.find(p => p.sku === sku);
+        if (!prod) return;
+
+        const titleHtml = `<i class="bi bi-box-seam"></i> Chỉnh Sửa Sản Phẩm`;
+        const bodyHtml = `
+            <div class="modal-form-group">
+                <label>Mã SKU</label>
+                <input class="modal-form-input" value="${esc(sku)}" readonly>
+            </div>
+            <div class="modal-form-group">
+                <label>Tên sản phẩm (*)</label>
+                <input class="modal-form-input" id="edit-prod-name" value="${esc(prod.name || '')}">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                <div class="modal-form-group">
+                    <label>Danh mục</label>
+                    <input class="modal-form-input" id="edit-prod-cat" value="${esc(prod.category || '')}">
+                </div>
+                <div class="modal-form-group">
+                    <label>Thương hiệu</label>
+                    <input class="modal-form-input" id="edit-prod-brand" value="${esc(prod.brand || '')}">
+                </div>
+            </div>
+        `;
+
+        openEditModal(titleHtml, bodyHtml, async () => {
+            const newName  = $('edit-prod-name').value.trim();
+            const newCat   = $('edit-prod-cat').value.trim();
+            const newBrand = $('edit-prod-brand').value.trim();
+            if (!newName) { toast('Tên sản phẩm không được để trống', 'error'); return false; }
+            try {
+                await sbPatch('products', { sku }, { name: newName, category: newCat, brand: newBrand });
+                prod.name = newName;
+                prod.category = newCat;
+                prod.brand = newBrand;
+                renderProducts();
+                toast(`Đã cập nhật sản phẩm SKU ${sku}`, 'success');
+                return true;
+            } catch(e) {
+                toast('Lỗi cập nhật: ' + e.message, 'error');
+                return false;
+            }
+        });
     }
 
     function deleteProduct(sku, name) {
+        closeAllActionMenus();
         showModal({
             title: '<i class="bi bi-trash"></i> Xóa sản phẩm',
             body: `Xóa hoàn toàn sản phẩm:<br><strong>${esc(name)}</strong> (SKU: <code>${esc(sku)}</code>)?`,
@@ -477,7 +667,6 @@ const DM = (() => {
     // ====================================================================
     // TAB 4 — HISTORY
     // ====================================================================
-    let _histSuggestList = [];
     function histSuggest(q) {
         const box = $('hist-suggest-box');
         if (!q || q.length < 2) { box.style.display = 'none'; return; }
@@ -512,24 +701,39 @@ const DM = (() => {
         try {
             let q = `product_sku=eq.${encodeURIComponent(_histSkuSelected)}&scraped_at=gte.${encodeURIComponent(since)}&order=scraped_at.desc&select=competitor,price,in_stock,scraped_at,id`;
             if (store) q += `&competitor=eq.${encodeURIComponent(store)}`;
-            const data = await supabaseFetch('price_history', q);
-            if (!data.length) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center">Không có dữ liệu trong khoảng thời gian này</td></tr>';
-                $('history-meta').textContent = ''; return;
-            }
-            $('history-meta').textContent = `${data.length} bản ghi trong ${days} ngày`;
-            tbody.innerHTML = data.map(r => `<tr>
-                <td><span class="badge badge-neutral">${esc(r.competitor)}</span></td>
-                <td style="font-weight:700">${fmt(r.price)}</td>
-                <td>${r.in_stock ? '<span class="badge badge-green">Còn hàng</span>' : '<span class="badge badge-red">Hết hàng</span>'}</td>
-                <td style="font-size:0.82rem;color:var(--text-muted)">${new Date(r.scraped_at).toLocaleString('vi-VN')}</td>
-                <td>
-                    <button class="btn-danger" onclick="DM.deleteHistoryRow('${esc(r.id)}')"><i class="bi bi-trash"></i></button>
-                </td>
-            </tr>`).join('');
+            _historyFiltered = await supabaseFetch('price_history', q);
+            _pageState.history.current = 1;
+            renderHistoryUI();
         } catch(e) {
             tbody.innerHTML = `<tr><td colspan="5" class="text-center" style="color:var(--red)">Lỗi: ${esc(e.message)}</td></tr>`;
+            renderPaginationUI('history-pagination', 'history', 0);
         }
+    }
+
+    function renderHistoryUI() {
+        const tbody = $('history-tbody');
+        const total = _historyFiltered.length;
+        if (!total) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Không có dữ liệu trong khoảng thời gian này</td></tr>';
+            renderPaginationUI('history-pagination', 'history', 0);
+            return;
+        }
+
+        const state = _pageState.history;
+        const start = (state.current - 1) * state.pageSize;
+        const pageItems = _historyFiltered.slice(start, start + state.pageSize);
+
+        tbody.innerHTML = pageItems.map(r => `<tr>
+            <td><span class="badge badge-neutral">${esc(r.competitor)}</span></td>
+            <td style="font-weight:700">${fmt(r.price)}</td>
+            <td>${r.in_stock ? '<span class="badge badge-green">Còn hàng</span>' : '<span class="badge badge-red">Hết hàng</span>'}</td>
+            <td style="font-size:0.82rem;color:var(--text-muted)">${new Date(r.scraped_at).toLocaleString('vi-VN')}</td>
+            <td>
+                <button class="btn-danger" onclick="DM.deleteHistoryRow('${esc(r.id)}')"><i class="bi bi-trash"></i> Xóa</button>
+            </td>
+        </tr>`).join('');
+
+        renderPaginationUI('history-pagination', 'history', total);
     }
 
     function deleteHistoryRow(id) {
@@ -542,7 +746,8 @@ const DM = (() => {
                     const url = `${SUPABASE_URL}/rest/v1/price_history?id=eq.${encodeURIComponent(id)}`;
                     const res = await fetch(url, { method: 'DELETE', headers: { ...headers, 'Prefer': 'return=minimal' } });
                     if (!res.ok) throw new Error(await res.text());
-                    loadHistory();
+                    _historyFiltered = _historyFiltered.filter(r => String(r.id) !== String(id));
+                    renderHistoryUI();
                     toast('Đã xóa bản ghi', 'success');
                 } catch(e) { toast('Lỗi: ' + e.message, 'error'); }
             }
@@ -576,13 +781,13 @@ const DM = (() => {
 
     // Public API
     return {
-        switchTab, closeModal, refreshAll, init,
+        switchTab, closeModal, closeEditModal, refreshAll, init,
         filterSources, filterProducts,
-        startEditUrl, cancelEditUrl, saveUrl,
+        openEditSourceModal, openEditProductModal,
         toggleActive, deleteSource, exportSources,
-        startEditName, cancelEditName, saveName,
         deleteProduct, exportProducts,
-        histSuggest, selectHistSku, loadHistory, deleteHistoryRow
+        histSuggest, selectHistSku, loadHistory, deleteHistoryRow,
+        setPage, setPageSize, toggleActionMenu
     };
 })();
 

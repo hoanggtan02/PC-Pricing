@@ -3,8 +3,6 @@
 // Đọc view `price_activity`: tần suất đổi giá theo (đối thủ × tuần)
 // =====================================================================
 
-
-
 // Cấu hình font chữ sang trọng đồng bộ cho Chart.js
 if (typeof Chart !== 'undefined') {
     Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
@@ -28,14 +26,40 @@ const BRAND_COLORS = {
 
 const getColor = (name) => BRAND_COLORS[name] || '#94a3b8';
 
-let activityChart = null;
+let activityChart   = null;
 let allActivityData = [];
+let activityPaginator;
 
 function weekLabel(weekStart) {
     const mon = new Date(weekStart + 'T00:00:00');
     const sun = new Date(mon);
     sun.setDate(mon.getDate() + 6);
     return `${mon.getDate()}–${sun.getDate()} Th${sun.getMonth() + 1}`;
+}
+
+function renderActivityTablePage(sorted) {
+    const tbody = document.getElementById('activity-table-body');
+    tbody.innerHTML = '';
+    sorted.forEach(row => {
+        const ratio = row.changes_per_100_products_week;
+        let badge = '<span class="badge badge-green">Thấp</span>';
+        if (ratio > 20) badge = '<span class="badge badge-red">Cao</span>';
+        else if (ratio > 10) badge = '<span class="badge" style="background:#fef9c3;color:#a16207">Trung bình</span>';
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>
+                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${getColor(row.competitor)};margin-right:8px"></span>
+                <strong>${row.competitor}</strong>
+                ${row.is_self ? '<span class="badge badge-green" style="margin-left:4px;font-size:0.7rem">Chúng ta</span>' : ''}
+            </td>
+            <td style="font-weight:700">${row.price_changes}</td>
+            <td>${row.products}</td>
+            <td style="font-weight:700;color:var(--accent)">${ratio}</td>
+            <td>${badge}</td>
+        `;
+        tbody.appendChild(tr);
+    });
 }
 
 function renderActivity(weekData) {
@@ -98,29 +122,8 @@ function renderActivity(weekData) {
         }
     });
 
-    // Bảng chi tiết
-    const tbody = document.getElementById('activity-table-body');
-    tbody.innerHTML = '';
-    sorted.forEach(row => {
-        const ratio = row.changes_per_100_products_week;
-        let badge = '<span class="badge badge-green">Thấp</span>';
-        if (ratio > 20) badge = '<span class="badge badge-red">Cao</span>';
-        else if (ratio > 10) badge = '<span class="badge" style="background:#fef9c3;color:#a16207">Trung bình</span>';
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>
-                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${getColor(row.competitor)};margin-right:8px"></span>
-                <strong>${row.competitor}</strong>
-                ${row.is_self ? '<span class="badge badge-green" style="margin-left:4px;font-size:0.7rem">Chúng ta</span>' : ''}
-            </td>
-            <td style="font-weight:700">${row.price_changes}</td>
-            <td>${row.products}</td>
-            <td style="font-weight:700;color:var(--accent)">${ratio}</td>
-            <td>${badge}</td>
-        `;
-        tbody.appendChild(tr);
-    });
+    // Phân trang bảng chi tiết
+    activityPaginator.setData(sorted);
 }
 
 async function fetchPriceActivity() {
@@ -133,10 +136,8 @@ async function fetchPriceActivity() {
             return;
         }
 
-        // Lấy danh sách tuần duy nhất (mới nhất trước)
         const weeks = [...new Set(allActivityData.map(r => r.week_start))].sort((a, b) => b.localeCompare(a)).slice(0, 8);
 
-        // Điền vào dropdown
         const select = document.getElementById('week-select');
         weeks.forEach((w, i) => {
             const opt = document.createElement('option');
@@ -145,7 +146,6 @@ async function fetchPriceActivity() {
             select.appendChild(opt);
         });
 
-        // Hiển thị tuần mới nhất
         select.value = weeks[0];
         const latestWeekData = allActivityData.filter(r => r.week_start === weeks[0]);
         renderActivity(latestWeekData);
@@ -165,4 +165,11 @@ async function fetchPriceActivity() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', fetchPriceActivity);
+document.addEventListener('DOMContentLoaded', () => {
+    activityPaginator = createPaginator({
+        containerId: 'activity-table-pagination',
+        renderFn: renderActivityTablePage,
+        defaultSize: 15
+    });
+    fetchPriceActivity();
+});

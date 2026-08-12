@@ -3,8 +3,9 @@
 // Nguồn: sku_price_trend_7d + product_overview (để lấy tên sản phẩm)
 // =====================================================================
 
-let trendData = [];
+let trendData    = [];
 let productNames = {};
+let trendPaginator;
 
 const DIRECTION_CONFIG = {
     up:   { icon: 'bi-arrow-up-circle-fill',   color: 'var(--red)',   label: '↑ Tăng' },
@@ -12,9 +13,9 @@ const DIRECTION_CONFIG = {
     flat: { icon: 'bi-dash-circle',             color: 'var(--text-muted)', label: '→ Không đổi' },
 };
 
-function renderTrendTable(data) {
+function renderTrendTablePage(data) {
     const tbody = document.getElementById('trend-table-body');
-    document.getElementById('trend-count-badge').textContent = `${data.length} dòng`;
+    document.getElementById('trend-count-badge').textContent = `${trendPaginator ? trendPaginator.getAll().length : data.length} dòng`;
 
     if (data.length === 0) {
         tbody.innerHTML = `<tr><td colspan="9" class="text-center">Không có biến động giá nào phù hợp bộ lọc.</td></tr>`;
@@ -67,7 +68,7 @@ function applyFilters() {
     if (compFilter === 'self')       filtered = filtered.filter(r => r.is_self);
     if (dirFilter !== 'all')         filtered = filtered.filter(r => r.direction === dirFilter);
 
-    renderTrendTable(filtered);
+    trendPaginator.setData(filtered);
 }
 
 async function fetchTrendData() {
@@ -77,7 +78,6 @@ async function fetchTrendData() {
             supabaseFetch('product_overview', 'select=sku,product_name'),
         ]);
 
-        // Map tên sản phẩm
         products.forEach(p => { productNames[p.sku] = p.product_name; });
         trendData = trends;
 
@@ -90,7 +90,6 @@ async function fetchTrendData() {
         document.getElementById('trend-kpi-down').textContent  = totalDecreases;
         document.getElementById('trend-kpi-total').textContent = totalChanges;
 
-        // Đối thủ đổi giá nhiều nhất (gộp theo competitor)
         const byComp = {};
         trends.forEach(r => { byComp[r.competitor] = (byComp[r.competitor] || 0) + r.changes; });
         const topComp = Object.entries(byComp).sort((a, b) => b[1] - a[1])[0];
@@ -101,7 +100,7 @@ async function fetchTrendData() {
 
         document.getElementById('last-update').innerHTML = `<i class="bi bi-check-circle"></i> ${trends.length} cặp có biến động`;
 
-        renderTrendTable(trendData);
+        trendPaginator.setData(trendData);
 
         document.getElementById('trend-competitor-filter').addEventListener('change', applyFilters);
         document.getElementById('trend-direction-filter').addEventListener('change', applyFilters);
@@ -116,4 +115,11 @@ async function fetchTrendData() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', fetchTrendData);
+document.addEventListener('DOMContentLoaded', () => {
+    trendPaginator = createPaginator({
+        containerId: 'trend-table-pagination',
+        renderFn: renderTrendTablePage,
+        defaultSize: 25
+    });
+    fetchTrendData();
+});

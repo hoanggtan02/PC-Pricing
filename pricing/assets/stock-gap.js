@@ -3,11 +3,10 @@
 // Đọc view `out_of_stock_gap`: SKU mà TNC hết hàng, đối thủ còn bán
 // =====================================================================
 
-
-
 let allGapData = [];
+let gapPaginator;
 
-function renderGapTable(data) {
+function renderGapTablePage(data) {
     const tbody = document.getElementById('gap-table-body');
     tbody.innerHTML = '';
 
@@ -46,21 +45,20 @@ function renderGapTable(data) {
 }
 
 function applyGapFilters() {
-    const cat = document.getElementById('gap-category-filter').value;
+    const cat   = document.getElementById('gap-category-filter').value;
     const brand = document.getElementById('gap-brand-filter').value;
 
     let filtered = allGapData;
-    if (cat) filtered = filtered.filter(r => r.category === cat);
+    if (cat)   filtered = filtered.filter(r => r.category === cat);
     if (brand) filtered = filtered.filter(r => r.brand === brand);
 
-    renderGapTable(filtered);
+    gapPaginator.setData(filtered);
 }
 
 async function fetchStockGap() {
     try {
         allGapData = await supabaseFetch('out_of_stock_gap', 'order=competitors_in_stock.desc');
 
-        // KPIs
         window.hideLoader?.();
         document.getElementById('gap-total').textContent = allGapData.length;
 
@@ -73,7 +71,7 @@ async function fetchStockGap() {
         const lastUpdateEl = document.getElementById('last-update');
         if (lastUpdateEl) lastUpdateEl.textContent = `${allGapData.length} sản phẩm cần nhập thêm`;
 
-        renderGapTable(allGapData);
+        gapPaginator.setData(allGapData);
 
         window.hideLoader?.();
 
@@ -86,6 +84,12 @@ async function fetchStockGap() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    gapPaginator = createPaginator({
+        containerId: 'gap-table-pagination',
+        renderFn: renderGapTablePage,
+        defaultSize: 25
+    });
+
     fetchStockGap();
     document.getElementById('gap-category-filter').addEventListener('change', applyGapFilters);
     document.getElementById('gap-brand-filter').addEventListener('change', applyGapFilters);

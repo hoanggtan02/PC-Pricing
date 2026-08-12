@@ -9,176 +9,22 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="assets/style.css">
     <style>
-        .dm-tabs {
-            display: flex;
-            gap: 0;
-            border-bottom: 2px solid var(--border-color);
-            margin-bottom: 1.5rem;
+        /* data-manager.php specific styles */
+        td { vertical-align: middle; }
+        th { white-space: nowrap; }
+        .url-cell {
+            max-width: 280px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
-        .dm-tab-btn {
-            padding: 0.75rem 1.5rem;
-            background: none;
-            border: none;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -2px;
-            font-family: 'Exo 2', sans-serif;
-            font-weight: 700;
-            font-size: 0.9rem;
-            color: var(--text-muted);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 0.45rem;
-            transition: all 0.2s;
-        }
-        .dm-tab-btn:hover { color: var(--accent); }
-        .dm-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-        .dm-tab-btn .tab-count {
-            background: var(--accent-light);
+        .url-cell a {
             color: var(--accent);
-            border-radius: 99px;
-            padding: 0.1rem 0.5rem;
-            font-size: 0.72rem;
-            font-weight: 800;
-        }
-        .dm-tab-btn.tab-warn .tab-count { background: var(--red-bg); color: var(--red); }
-        .dm-panel { display: none; }
-        .dm-panel.active { display: block; }
-
-        .dm-toolbar {
-            display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.25rem;
-        }
-        .dm-search {
-            flex: 1; min-width: 200px; padding: 0.6rem 1rem;
-            border: 1px solid var(--border-color); border-radius: 0.5rem;
-            font-size: 0.88rem; outline: none; background: white;
-            font-family: 'Plus Jakarta Sans', sans-serif; transition: border-color 0.2s;
-        }
-        .dm-search:focus { border-color: var(--accent); }
-        .dm-filter {
-            padding: 0.6rem 1rem; border: 1px solid var(--border-color);
-            border-radius: 0.5rem; font-size: 0.88rem; font-weight: 600;
-            background: white; outline: none; cursor: pointer;
-        }
-        .btn-primary {
-            padding: 0.6rem 1.2rem; background: var(--accent); color: white;
-            border: none; border-radius: 0.5rem; font-family: 'Exo 2', sans-serif;
-            font-weight: 700; font-size: 0.85rem; cursor: pointer;
-            display: inline-flex; align-items: center; gap: 0.4rem;
-            transition: opacity 0.2s; white-space: nowrap;
-        }
-        .btn-primary:hover { opacity: 0.85; }
-        .btn-danger {
-            padding: 0.4rem 0.8rem; background: var(--red-bg); color: var(--red);
-            border: 1px solid rgba(224,90,90,0.2); border-radius: 0.4rem;
-            font-size: 0.78rem; font-weight: 700; cursor: pointer;
-            display: inline-flex; align-items: center; gap: 0.3rem; transition: all 0.2s; white-space: nowrap;
-        }
-        .btn-danger:hover { background: var(--red); color: white; }
-        .btn-warn {
-            padding: 0.4rem 0.8rem; background: #FFF8E6; color: #B86800;
-            border: 1px solid rgba(184,104,0,0.2); border-radius: 0.4rem;
-            font-size: 0.78rem; font-weight: 700; cursor: pointer;
-            display: inline-flex; align-items: center; gap: 0.3rem; transition: all 0.2s; white-space: nowrap;
-        }
-        .btn-warn:hover { background: #B86800; color: white; }
-        .btn-ghost {
-            padding: 0.4rem 0.8rem; background: var(--accent-light); color: var(--accent);
-            border: 1px solid rgba(1,79,43,0.15); border-radius: 0.4rem;
-            font-size: 0.78rem; font-weight: 700; cursor: pointer;
-            display: inline-flex; align-items: center; gap: 0.3rem; transition: all 0.2s; white-space: nowrap;
             text-decoration: none;
+            font-size: 0.83rem;
+            font-family: 'Plus Jakarta Sans', sans-serif;
         }
-        .btn-ghost:hover { background: var(--accent); color: white; }
-        .action-cell { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
-
-        /* Inline edit */
-        .inline-input {
-            border: 1px solid var(--border-color); border-radius: 0.35rem;
-            padding: 0.3rem 0.6rem; font-size: 0.85rem; outline: none;
-            font-family: 'Plus Jakarta Sans', sans-serif; min-width: 200px; transition: border-color 0.2s;
-        }
-        .inline-input:focus { border-color: var(--accent); }
-        .icon-btn {
-            background: none; border: none; cursor: pointer; padding: 0.25rem 0.35rem;
-            border-radius: 0.3rem; font-size: 0.9rem; transition: all 0.15s; display: inline-flex;
-        }
-        .icon-btn-edit { color: var(--text-muted); }
-        .icon-btn-edit:hover { color: var(--accent); background: var(--accent-light); }
-        .icon-btn-save { color: var(--green); }
-        .icon-btn-cancel { color: var(--red); }
-
-        /* Toggle switch */
-        .toggle {
-            appearance: none; -webkit-appearance: none;
-            width: 36px; height: 20px; border-radius: 99px;
-            background: #D1D5DB; cursor: pointer; position: relative; transition: background 0.2s;
-        }
-        .toggle::after {
-            content: ''; position: absolute; top: 3px; left: 3px;
-            width: 14px; height: 14px; border-radius: 50%; background: white; transition: left 0.2s;
-        }
-        .toggle:checked { background: var(--green); }
-        .toggle:checked::after { left: 19px; }
-
-        /* Toast */
-        #dm-toast {
-            position: fixed; bottom: 2rem; right: 2rem; z-index: 99999;
-            display: flex; flex-direction: column; gap: 0.5rem;
-        }
-        .toast-item {
-            padding: 0.75rem 1.25rem; border-radius: 0.5rem; font-size: 0.88rem; font-weight: 600;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12); display: flex; align-items: center; gap: 0.5rem;
-            animation: toast-in 0.3s ease;
-        }
-        .toast-success { background: var(--green); color: white; }
-        .toast-error   { background: var(--red); color: white; }
-        .toast-warn    { background: #f59e0b; color: white; }
-        @keyframes toast-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
-
-        /* Modal */
-        .dm-modal-backdrop {
-            position: fixed; inset: 0; background: rgba(28,41,33,0.45); z-index: 50000;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .dm-modal {
-            background: white; border-radius: 0.75rem; padding: 2rem; max-width: 480px; width: 90%;
-            box-shadow: 0 24px 64px rgba(0,0,0,0.15);
-        }
-        .dm-modal h3 {
-            font-family: 'Exo 2', sans-serif; font-weight: 800; font-size: 1.15rem;
-            color: var(--accent); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;
-        }
-        .dm-modal p { color: var(--text-muted); font-size: 0.92rem; line-height: 1.6; }
-        .modal-warn {
-            margin-top: 0.75rem; padding: 0.65rem 1rem;
-            background: #FFF8E6; border-left: 3px solid #f59e0b;
-            border-radius: 0.35rem; font-size: 0.85rem; color: #92600A;
-        }
-        .modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem; }
-        .btn-modal-cancel {
-            padding: 0.6rem 1.2rem; background: var(--bg-light); color: var(--text-muted);
-            border: 1px solid var(--border-color); border-radius: 0.5rem; font-weight: 700; cursor: pointer;
-        }
-        .btn-modal-confirm {
-            padding: 0.6rem 1.2rem; background: var(--red); color: white;
-            border: none; border-radius: 0.5rem; font-weight: 700; cursor: pointer;
-        }
-        .btn-modal-confirm-warn {
-            padding: 0.6rem 1.2rem; background: #f59e0b; color: white;
-            border: none; border-radius: 0.5rem; font-weight: 700; cursor: pointer;
-        }
-
-        /* Loading */
-        .loading-row td { text-align: center; padding: 3rem; color: var(--text-muted); }
-        .spinner {
-            display: inline-block; width: 18px; height: 18px;
-            border: 2px solid var(--border-color); border-top-color: var(--accent);
-            border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 0.4rem;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* Anomaly */
+        .url-cell a:hover { text-decoration: underline; }
         .anomaly-row { background: #FFFBF2 !important; }
         .anomaly-badge {
             display: inline-flex; align-items: center; gap: 0.3rem;
@@ -187,6 +33,7 @@
         }
         .sku-suspect { color: var(--red); font-weight: 700; font-family: 'Exo 2', monospace; }
     </style>
+
 </head>
 <body>
     <div id="cr-overlay">
@@ -210,10 +57,9 @@
 
     <div class="background-blobs"><div class="blob blob-1"></div><div class="blob blob-2"></div></div>
     <div class="app-container">
-        <nav class="nav-menu">
+                <nav class="nav-menu">
             <a href="index.php"><i class="bi bi-speedometer2"></i> Tổng quan</a>
-            <a href="category.php"><i class="bi bi-grid-3x3-gap"></i> Theo Danh Mục</a>
-            <a href="brand.php"><i class="bi bi-tags"></i> Theo Thương Hiệu</a>
+            <a href="category.php"><i class="bi bi-funnel"></i> Bộ Lọc Chi Tiết</a>
             <a href="stock-gap.php"><i class="bi bi-box-seam"></i> Khoảng Trống Hàng</a>
             <a href="price-activity.php"><i class="bi bi-graph-up-arrow"></i> Biến Động Giá</a>
             <a href="trend.php"><i class="bi bi-activity"></i> Xu Hướng 7 Ngày</a>
@@ -226,7 +72,7 @@
             <div class="header-content">
                 <div>
                     <h1><i class="bi bi-database-gear"></i> Quản Lý Dữ Liệu</h1>
-                    <p>Kiểm tra, sửa đổi và xóa nguồn cào giá — không cần vào Supabase SQL Editor</p>
+                    <p>Kiểm tra, sửa đổi và xóa nguồn cào giá — phân trang tự động tối ưu tốc độ</p>
                 </div>
                 <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
                     <div id="anomaly-header-badge" style="display:none;background:var(--red-bg);color:var(--red);border:1px solid rgba(224,90,90,0.2);padding:0.6rem 1.2rem;border-radius:0.5rem;font-size:0.85rem;font-weight:700">
@@ -290,6 +136,8 @@
                             </tbody>
                         </table>
                     </div>
+                    <!-- Pagination Bar for Sources -->
+                    <div class="pagination-bar" id="sources-pagination"></div>
                 </div>
             </div>
 
@@ -377,6 +225,8 @@
                             </tbody>
                         </table>
                     </div>
+                    <!-- Pagination Bar for Products -->
+                    <div class="pagination-bar" id="products-pagination"></div>
                 </div>
             </div>
 
@@ -412,7 +262,8 @@
                             </tbody>
                         </table>
                     </div>
-                    <div id="history-meta" style="padding:0.75rem 0.5rem;font-size:0.85rem;color:var(--text-muted)"></div>
+                    <!-- Pagination Bar for History -->
+                    <div class="pagination-bar" id="history-pagination"></div>
                 </div>
             </div>
         </main>
@@ -421,7 +272,7 @@
     <!-- Toast -->
     <div id="dm-toast"></div>
 
-    <!-- Modal -->
+    <!-- Confirm Modal -->
     <div id="dm-modal-backdrop" style="display:none" class="dm-modal-backdrop">
         <div class="dm-modal">
             <h3 id="modal-title"><i class="bi bi-trash"></i> Xác nhận</h3>
@@ -430,6 +281,18 @@
             <div class="modal-actions">
                 <button class="btn-modal-cancel" onclick="DM.closeModal()">Hủy</button>
                 <button id="modal-confirm-btn" class="btn-modal-confirm">Xác nhận</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Form Edit Modal Popup -->
+    <div id="dm-edit-modal-backdrop" style="display:none" class="dm-modal-backdrop">
+        <div class="dm-modal">
+            <h3 id="edit-modal-title"><i class="bi bi-pencil-square"></i> Chỉnh sửa dữ liệu</h3>
+            <div id="edit-modal-body" style="display:flex;flex-direction:column;gap:1rem;margin-top:1.25rem;"></div>
+            <div class="modal-actions">
+                <button class="btn-modal-cancel" onclick="DM.closeEditModal()">Hủy bỏ</button>
+                <button id="edit-modal-save-btn" class="btn-primary"><i class="bi bi-floppy"></i> Lưu thay đổi</button>
             </div>
         </div>
     </div>

@@ -6,10 +6,10 @@
 let flashData    = [];
 let allProducts  = {};
 let activeStoreFilter = 'all';
+let flashPaginator;
 
 async function fetchFlashSaleData() {
     try {
-        // Lấy tất cả giá flash sale + giá TNC của từng sản phẩm đó
         const [flashRows, ourPrices] = await Promise.all([
             supabaseFetch('latest_prices_cache',
                 'is_flash_sale=eq.true&is_self=eq.false&select=sku,product_name,brand,category,competitor,price,url,scraped_at'),
@@ -17,12 +17,9 @@ async function fetchFlashSaleData() {
                 'is_self=eq.true&in_stock=eq.true&select=sku,price'),
         ]);
 
-        // Map giá TNC theo SKU
         ourPrices.forEach(p => { allProducts[p.sku] = p.price; });
-
         flashData = flashRows;
 
-        // KPI
         const affectedSkus = new Set(flashRows.map(r => r.sku));
         const stores = new Set(flashRows.map(r => r.competitor));
         const affected = flashRows.filter(r => {
@@ -37,7 +34,6 @@ async function fetchFlashSaleData() {
         document.getElementById('last-update').innerHTML =
             `<i class="bi bi-lightning-charge"></i> ${flashRows.length} sản phẩm flash sale`;
 
-        // Nạp bộ lọc cửa hàng
         const storeSelect = document.getElementById('flash-store-filter');
         [...stores].sort().forEach(s => {
             const opt = document.createElement('option');
@@ -47,10 +43,10 @@ async function fetchFlashSaleData() {
         });
         storeSelect.addEventListener('change', (e) => {
             activeStoreFilter = e.target.value;
-            renderFlashTable();
+            applyFlashFilter();
         });
 
-        renderFlashTable();
+        applyFlashFilter();
 
         window.hideLoader?.();
 
@@ -62,24 +58,30 @@ async function fetchFlashSaleData() {
     }
 }
 
-function renderFlashTable() {
+function applyFlashFilter() {
     const filtered = activeStoreFilter === 'all'
         ? flashData
         : flashData.filter(r => r.competitor === activeStoreFilter);
 
-    const tbody    = document.getElementById('flash-table-body');
-    const empty    = document.getElementById('flash-empty');
+    const empty     = document.getElementById('flash-empty');
     const tableWrap = document.getElementById('flash-table-wrap');
 
     if (filtered.length === 0) {
-        empty.style.display    = 'block';
+        empty.style.display     = 'block';
         tableWrap.style.display = 'none';
+        flashPaginator.setData([]);
         return;
     }
-    empty.style.display    = 'none';
+    empty.style.display     = 'none';
     tableWrap.style.display = 'block';
 
-    tbody.innerHTML = filtered.map(r => {
+    flashPaginator.setData(filtered);
+}
+
+function renderFlashTablePage(rows) {
+    const tbody = document.getElementById('flash-table-body');
+
+    tbody.innerHTML = rows.map(r => {
         const ourPrice = allProducts[r.sku];
         let diffCell = '—';
         if (ourPrice && r.price) {
@@ -116,4 +118,11 @@ function renderFlashTable() {
     }).join('');
 }
 
-document.addEventListener('DOMContentLoaded', fetchFlashSaleData);
+document.addEventListener('DOMContentLoaded', () => {
+    flashPaginator = createPaginator({
+        containerId: 'flash-table-pagination',
+        renderFn: renderFlashTablePage,
+        defaultSize: 25
+    });
+    fetchFlashSaleData();
+});
