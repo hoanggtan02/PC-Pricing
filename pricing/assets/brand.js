@@ -134,10 +134,13 @@ async function fetchBrandData(brand) {
         renderBrandTable(products);
         renderBrandCoverageTable(coverage);
 
+        window.hideLoader?.();
+
     } catch (err) {
         console.error(err);
         document.getElementById('brand-table-body').innerHTML =
             `<tr><td colspan="7" class="text-center highlight-red">❌ Lỗi: ${err.message}</td></tr>`;
+        window.hideLoader?.();
     }
 }
 

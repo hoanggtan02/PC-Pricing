@@ -104,10 +104,13 @@ async function fetchTrendData() {
         document.getElementById('trend-competitor-filter').addEventListener('change', applyFilters);
         document.getElementById('trend-direction-filter').addEventListener('change', applyFilters);
 
+        window.hideLoader?.();
+
     } catch (err) {
         console.error(err);
         document.getElementById('trend-table-body').innerHTML =
             `<tr><td colspan="9" class="text-center highlight-red">❌ Lỗi: ${err.message}</td></tr>`;
+        window.hideLoader?.();
     }
 }
 

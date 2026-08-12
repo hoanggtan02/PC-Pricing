@@ -3,10 +3,7 @@
 // Đọc view `out_of_stock_gap`: SKU mà TNC hết hàng, đối thủ còn bán
 // =====================================================================
 
-const formatVND = (price) => {
-    if (!price) return '—';
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
-};
+
 
 let allGapData = [];
 
@@ -59,10 +56,10 @@ function applyGapFilters() {
 
 async function fetchStockGap() {
     try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/out_of_stock_gap?order=competitors_in_stock.desc`, { headers });
-        allGapData = await res.json();
+        allGapData = await supabaseFetch('out_of_stock_gap', 'order=competitors_in_stock.desc');
 
         // KPIs
+        window.hideLoader?.();
         document.getElementById('gap-total').textContent = allGapData.length;
 
         const totalCompetitors = allGapData.reduce((s, r) => s + (r.competitors_in_stock || 0), 0);
@@ -71,14 +68,18 @@ async function fetchStockGap() {
         const riskRevenue = allGapData.reduce((s, r) => s + (r.cheapest_competitor_price || 0), 0);
         document.getElementById('gap-revenue-risk').textContent = formatVND(riskRevenue);
 
-        document.getElementById('last-update').textContent = `${allGapData.length} sản phẩm cần nhập thêm`;
+        const lastUpdateEl = document.getElementById('last-update');
+        if (lastUpdateEl) lastUpdateEl.textContent = `${allGapData.length} sản phẩm cần nhập thêm`;
 
         renderGapTable(allGapData);
+
+        window.hideLoader?.();
 
     } catch (e) {
         console.error(e);
         document.getElementById('gap-table-body').innerHTML =
             '<tr><td colspan="7" class="text-center highlight-red">Lỗi tải dữ liệu. Kiểm tra F12 Console.</td></tr>';
+        window.hideLoader?.();
     }
 }
 

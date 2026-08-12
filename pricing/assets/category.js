@@ -127,10 +127,13 @@ async function fetchCategoryData(category) {
         renderCategoryTable(products);
         renderCoverageTable(coverage);
 
+        document.getElementById('cr-overlay')?.classList.add('hidden');
+
     } catch (err) {
         console.error(err);
         document.getElementById('category-table-body').innerHTML =
             `<tr><td colspan="7" class="text-center highlight-red">❌ Lỗi: ${err.message}</td></tr>`;
+        document.getElementById('cr-overlay')?.classList.add('hidden');
     }
 }
 

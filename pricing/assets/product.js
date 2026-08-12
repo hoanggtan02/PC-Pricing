@@ -17,9 +17,12 @@ async function loadProductList() {
         if (typeof INITIAL_SKU !== 'undefined' && INITIAL_SKU) {
             document.getElementById('sku-search').value = INITIAL_SKU;
             loadProduct(INITIAL_SKU);
+        } else {
+            window.hideLoader?.();
         }
     } catch (err) {
         console.error('Không thể tải danh sách sản phẩm:', err);
+        window.hideLoader?.();
     }
 }
 

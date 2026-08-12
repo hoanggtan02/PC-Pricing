@@ -194,54 +194,70 @@ function renderActivityChart(activityData, week) {
 
 // ── Tải toàn bộ dữ liệu ──────────────────────────────────────────────
 async function fetchDashboardData() {
+    console.log('Bắt đầu tải dữ liệu Dashboard...');
     try {
-        const [products, competitors, oosGaps, activity, refreshRow] = await Promise.all([
-            supabaseFetch('product_overview'),
+        // Sử dụng Promise.allSettled để tránh 1 view lỗi làm dừng toàn bộ trang chủ
+        const results = await Promise.allSettled([
+            supabaseFetch('product_overview', 'select=sku,product_name,brand,category,our_price,lowest_price,cheapest_competitor,num_sources,pct_vs_mean'),
             supabaseFetch('competitors', 'is_self=eq.false'),
             supabaseFetch('out_of_stock_gap_by_category'),
             supabaseFetch('price_activity', 'order=week_start.desc'),
             supabaseFetch('latest_prices_cache', 'select=refreshed_at&order=refreshed_at.desc', 1),
         ]);
 
-        allProducts = products;
+        const products    = results[0].status === 'fulfilled' ? results[0].value : [];
+        const competitors = results[1].status === 'fulfilled' ? results[1].value : [];
+        const oosGaps     = results[2].status === 'fulfilled' ? results[2].value : [];
+        const activity    = results[3].status === 'fulfilled' ? results[3].value : [];
+        const refreshRow  = results[4].status === 'fulfilled' ? results[4].value : [];
 
-        // Cập nhật KPIs chính
-        document.getElementById('kpi-products').textContent = products.length;
-        document.getElementById('kpi-competitors').textContent = competitors.length;
-        document.getElementById('kpi-categories').textContent = `trên ${new Set(products.map(p => p.category)).size} danh mục`;
+        if (results[0].status === 'rejected') console.error('L�        // Cập nhật KPIs chính (An toàn null-check)
+        const elProds = document.getElementById('kpi-products');
+        if (elProds) elProds.textContent = products.length;
+
+        const elComps = document.getElementById('kpi-competitors');
+        if (elComps) elComps.textContent = competitors.length;
+
+        const elCats = document.getElementById('kpi-categories');
+        if (elCats) elCats.textContent = `trên ${new Set(products.map(p => p.category)).size} danh mục`;
 
         const beaten = products.filter(p => p.our_price && p.lowest_price && p.our_price > p.lowest_price).length;
-        document.getElementById('kpi-beaten').textContent = beaten;
+        const elBeaten = document.getElementById('kpi-beaten');
+        if (elBeaten) elBeaten.textContent = beaten;
 
         const withDelta = products.filter(p => p.pct_vs_mean !== null);
         const avgDiff = withDelta.length ? (withDelta.reduce((s, p) => s + p.pct_vs_mean, 0) / withDelta.length).toFixed(1) : 0;
         const avgEl = document.getElementById('kpi-avg-diff');
-        avgEl.textContent = (avgDiff > 0 ? '+' : '') + avgDiff + '%';
-        avgEl.className = 'value ' + (avgDiff > 0 ? 'highlight-red' : 'highlight-green');
+        if (avgEl) {
+            avgEl.textContent = (avgDiff > 0 ? '+' : '') + avgDiff + '%';
+            avgEl.className = 'value ' + (avgDiff > 0 ? 'highlight-red' : 'highlight-green');
+        }
 
         // Cập nhật thẻ danh mục
         renderCategoryCards(products, oosGaps);
 
         // Biểu đồ tần suất đổi giá
         const weekSelect = document.getElementById('week-select');
-        weekSelect.innerHTML = '';
-        const weeks = [...new Set(activity.map(r => r.week_start))].sort((a, b) => b.localeCompare(a)).slice(0, 4);
+        if (weekSelect) {
+            weekSelect.innerHTML = '';
+            const weeks = [...new Set(activity.map(r => r.week_start))].sort((a, b) => b.localeCompare(a)).slice(0, 4);
 
-        weeks.forEach((w, i) => {
-            const opt = document.createElement('option');
-            opt.value = w;
-            const dMon = new Date(w);
-            const dSun = new Date(dMon);
-            dSun.setDate(dMon.getDate() + 6);
-            opt.textContent = `${dMon.getDate()}–${dSun.getDate()} Th${dSun.getMonth()+1}` + (i === 0 ? ' (Tuần mới nhất)' : '');
-            weekSelect.appendChild(opt);
-        });
-
-        if (weeks.length > 0) {
-            renderActivityChart(activity, weeks[0]);
-            weekSelect.addEventListener('change', (e) => {
-                renderActivityChart(activity, e.target.value);
+            weeks.forEach((w, i) => {
+                const opt = document.createElement('option');
+                opt.value = w;
+                const dMon = new Date(w);
+                const dSun = new Date(dMon);
+                dSun.setDate(dMon.getDate() + 6);
+                opt.textContent = `${dMon.getDate()}–${dSun.getDate()} Th${dSun.getMonth()+1}` + (i === 0 ? ' (Tuần mới nhất)' : '');
+                weekSelect.appendChild(opt);
             });
+
+            if (weeks.length > 0) {
+                renderActivityChart(activity, weeks[0]);
+                weekSelect.addEventListener('change', (e) => {
+                    renderActivityChart(activity, e.target.value);
+                });
+            }
         }
 
         // Bảng cần chú ý
@@ -249,11 +265,24 @@ async function fetchDashboardData() {
 
         // Nạp hãng vào bộ lọc
         const brandSelect = document.getElementById('brand-filter');
-        const brands = [...new Set(products.map(p => p.brand))].sort();
-        brands.forEach(b => {
-            const opt = document.createElement('option');
-            opt.value = b;
-            opt.textContent = b;
+        if (brandSelect) {
+            const brands = [...new Set(products.map(p => p.brand))].sort();
+            brands.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b;
+                opt.textContent = b;
+                brandSelect.appendChild(opt);
+            });
+            brandSelect.addEventListener('change', (e) => {
+                const filtered = e.target.value === 'all' ? allProducts : allProducts.filter(p => p.brand === e.target.value);
+                renderNeedsAttention(filtered);
+            });
+        }
+
+        // Cập nhật mốc thời gian
+        const freshAt = refreshRow[0]?.refreshed_at || (products.length ? products[0].last_scraped : null) || new Date().toISOString();
+        const lastUpdateEl = document.getElementById('last-update');
+        if (lastUpdateEl) lastUpdateEl.innerHTML = `Cập nhật <strong>${timeAgo(freshAt)}</strong>`;ent = b;
             brandSelect.appendChild(opt);
         });
         brandSelect.addEventListener('change', (e) => {
@@ -262,14 +291,15 @@ async function fetchDashboardData() {
         });
 
         // Cập nhật mốc thời gian
-        const freshAt = refreshRow[0]?.refreshed_at || products.reduce((max, p) => p.last_scraped > (max || '') ? p.last_scraped : max, null);
-        if (freshAt) {
-            document.getElementById('last-update').innerHTML = `Cập nhật <strong>${timeAgo(freshAt)}</strong>`;
-        }
+        const freshAt = refreshRow[0]?.refreshed_at || (products.length ? products[0].last_scraped : null) || new Date().toISOString();
+        document.getElementById('last-update').innerHTML = `Cập nhật <strong>${timeAgo(freshAt)}</strong>`;
 
     } catch (err) {
-        console.error(err);
-        document.getElementById('table-body').innerHTML = `<tr><td colspan="7" class="text-center highlight-red">❌ Lỗi kết nối: ${err.message}</td></tr>`;
+        console.error('Lỗi Dashboard:', err);
+        const lastUpdateEl = document.getElementById('last-update');
+        if (lastUpdateEl) lastUpdateEl.innerHTML = `<span class="highlight-red">❌ ${err.message}</span>`;
+        const tbody = document.getElementById('table-body');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="text-center highlight-red">❌ Lỗi kết nối: ${err.message}</td></tr>`;
     }
 }
 

@@ -3,10 +3,7 @@
 // Đọc view `price_activity`: tần suất đổi giá theo (đối thủ × tuần)
 // =====================================================================
 
-const formatVND = (price) => {
-    if (!price) return '—';
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
-};
+
 
 // Cấu hình font chữ sang trọng đồng bộ cho Chart.js
 if (typeof Chart !== 'undefined') {
@@ -128,8 +125,7 @@ function renderActivity(weekData) {
 
 async function fetchPriceActivity() {
     try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/price_activity?order=week_start.desc`, { headers });
-        allActivityData = await res.json();
+        allActivityData = await supabaseFetch('price_activity', 'order=week_start.desc');
 
         if (allActivityData.length === 0) {
             document.getElementById('activity-table-body').innerHTML =
@@ -159,10 +155,13 @@ async function fetchPriceActivity() {
             renderActivity(filtered);
         });
 
+        window.hideLoader?.();
+
     } catch (e) {
         console.error(e);
         document.getElementById('activity-table-body').innerHTML =
             '<tr><td colspan="5" class="text-center highlight-red">Lỗi tải dữ liệu.</td></tr>';
+        window.hideLoader?.();
     }
 }
 
