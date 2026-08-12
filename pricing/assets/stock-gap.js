@@ -44,17 +44,52 @@ function renderGapTablePage(data) {
     });
 }
 
+// ── Build dropdown Danh Mục ───────────────────────────────────────────
+function buildGapCategoryDropdown() {
+    const sel = document.getElementById('gap-category-filter');
+    if (!sel) return;
+    const prev = sel.value;
+    const cats = [...new Set(allGapData.map(r => r.category).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">Tất cả danh mục</option>';
+    cats.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c; o.textContent = c;
+        sel.appendChild(o);
+    });
+    if (cats.includes(prev)) sel.value = prev;
+}
+
+// ── Build dropdown Thương Hiệu theo danh mục đang chọn ───────────────
+function buildGapBrandDropdown(selectedCat) {
+    const sel = document.getElementById('gap-brand-filter');
+    if (!sel) return;
+    const prev = sel.value;
+    const source = selectedCat ? allGapData.filter(r => r.category === selectedCat) : allGapData;
+    const brands = [...new Set(source.map(r => r.brand).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">Tất cả thương hiệu</option>';
+    brands.forEach(b => {
+        const o = document.createElement('option');
+        o.value = b; o.textContent = b;
+        sel.appendChild(o);
+    });
+    if (brands.includes(prev)) sel.value = prev; else sel.value = '';
+}
+
+// ── Áp dụng bộ lọc ───────────────────────────────────────────────────
 function applyGapFilters() {
+    const q     = (document.getElementById('gap-search-filter')?.value || '').toLowerCase().trim();
     const cat   = document.getElementById('gap-category-filter').value;
     const brand = document.getElementById('gap-brand-filter').value;
 
     let filtered = allGapData;
+    if (q)     filtered = filtered.filter(r => r.product_name.toLowerCase().includes(q) || r.sku.toLowerCase().includes(q));
     if (cat)   filtered = filtered.filter(r => r.category === cat);
     if (brand) filtered = filtered.filter(r => r.brand === brand);
 
     gapPaginator.setData(filtered);
 }
 
+// ── Tải dữ liệu ──────────────────────────────────────────────────────
 async function fetchStockGap() {
     try {
         allGapData = await supabaseFetch('out_of_stock_gap', 'order=competitors_in_stock.desc');
@@ -71,9 +106,11 @@ async function fetchStockGap() {
         const lastUpdateEl = document.getElementById('last-update');
         if (lastUpdateEl) lastUpdateEl.textContent = `${allGapData.length} sản phẩm cần nhập thêm`;
 
-        gapPaginator.setData(allGapData);
+        // Build dropdowns động từ dữ liệu thực
+        buildGapCategoryDropdown();
+        buildGapBrandDropdown('');
 
-        window.hideLoader?.();
+        gapPaginator.setData(allGapData);
 
     } catch (e) {
         console.error(e);
@@ -83,6 +120,7 @@ async function fetchStockGap() {
     }
 }
 
+// ── Khởi động ────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     gapPaginator = createPaginator({
         containerId: 'gap-table-pagination',
@@ -91,6 +129,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     fetchStockGap();
-    document.getElementById('gap-category-filter').addEventListener('change', applyGapFilters);
+
+    // Đổi danh mục → refresh thương hiệu → lọc lại
+    document.getElementById('gap-category-filter').addEventListener('change', () => {
+        buildGapBrandDropdown(document.getElementById('gap-category-filter').value);
+        applyGapFilters();
+    });
     document.getElementById('gap-brand-filter').addEventListener('change', applyGapFilters);
+    document.getElementById('gap-search-filter')?.addEventListener('input', applyGapFilters);
 });

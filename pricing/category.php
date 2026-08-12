@@ -162,13 +162,7 @@
                         <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600; margin-bottom: 0.4rem; display: block;">Danh mục</label>
                         <select id="filter-category" class="glass-select" style="width: 100%;">
                             <option value="all">Tất cả danh mục</option>
-                            <option value="Laptop">Laptop</option>
-                            <option value="Monitor">Màn hình (Monitor)</option>
-                            <option value="Ssd">SSD</option>
-                            <option value="Ram">RAM</option>
-                            <option value="Cpu">CPU</option>
-                            <option value="Mainboard">Mainboard</option>
-                            <option value="Vga">Card màn hình (VGA)</option>
+                            <!-- Danh mục được nạp động từ dữ liệu -->
                         </select>
                     </div>
                     <div>

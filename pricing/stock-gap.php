@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 // PC Pricing Dashboard - Khoảng Trống Hàng Hóa
 ?>
 <!DOCTYPE html>
@@ -6,7 +6,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Khoảng Trống Hàng - TNC Dashboard</title>
+    <title>Cơ hội - TNC Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="assets/style.css">
@@ -56,7 +56,7 @@
         <header class="glass-header">
             <div class="header-content">
                 <div>
-                    <h1><i class="bi bi-box-seam-fill"></i> Khoảng Trống Hàng Hóa</h1>
+                    <h1><i class="bi bi-box-seam-fill"></i> Cơ Hội</h1>
                     <p>Sản phẩm TNC đang hết hàng — trong khi đối thủ vẫn còn bán</p>
                 </div>
                 <div class="status-badge" id="last-update"><i class="bi bi-clock"></i> Đang tải...</div>
@@ -85,29 +85,31 @@
             <div class="glass-card table-section">
                 <div class="section-header">
                     <h2><i class="bi bi-list-ul"></i> Danh sách sản phẩm mất cơ hội</h2>
-                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-                        <select id="gap-category-filter" class="glass-select">
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.75rem;margin-bottom:1.25rem;align-items:end;">
+                    <div>
+                        <label style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:0.4rem;display:block;">Tìm kiếm</label>
+                        <div style="position:relative;">
+                            <input type="text" id="gap-search-filter" class="glass-input" placeholder="Nhập tên SP, SKU..." style="padding-left:2.2rem;">
+                            <i class="bi bi-search" style="position:absolute;left:0.8rem;top:50%;transform:translateY(-50%);color:var(--text-muted);"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:0.4rem;display:block;">Danh mục</label>
+                        <select id="gap-category-filter" class="glass-select" style="width:100%;">
                             <option value="">Tất cả danh mục</option>
-                            <option value="Laptop">Laptop</option>
-                            <option value="Monitor">Màn hình</option>
-                            <option value="Ssd">SSD</option>
-                            <option value="Ram">RAM</option>
-                            <option value="Cpu">CPU</option>
-                            <option value="Vga">Card màn hình</option>
-                            <option value="Mainboard">Mainboard</option>
+                            <!-- Nạp động từ dữ liệu -->
                         </select>
-                        <select id="gap-brand-filter" class="glass-select">
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:0.4rem;display:block;">Thương hiệu</label>
+                        <select id="gap-brand-filter" class="glass-select" style="width:100%;">
                             <option value="">Tất cả thương hiệu</option>
-                            <option value="Dell">Dell</option>
-                            <option value="Lenovo">Lenovo</option>
-                            <option value="HP">HP</option>
-                            <option value="Apple">Apple</option>
-                            <option value="Asus">Asus</option>
-                            <option value="Acer">Acer</option>
-                            <option value="MSI">MSI</option>
+                            <!-- Nạp động từ dữ liệu -->
                         </select>
                     </div>
                 </div>
+
                 <div class="table-responsive">
                     <table>
                         <thead>

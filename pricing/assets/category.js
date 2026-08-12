@@ -284,6 +284,64 @@ function updateCoverage(filteredProducts) {
         </table>`;
 }
 
+// ── Cập nhật dropdown Danh Mục từ dữ liệu thực ─────────────────
+function updateCategoryDropdown() {
+    const catSelect = document.getElementById('filter-category');
+    if (!catSelect) return;
+
+    const prevCat = catSelect.value;
+
+    // Lấy tất cả danh mục duy nhất, sắp xếp
+    const categories = [...new Set(allProducts.map(p => p.category).filter(Boolean))].sort();
+
+    catSelect.innerHTML = '<option value="all">Tất cả danh mục</option>';
+    categories.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        catSelect.appendChild(opt);
+    });
+
+    // Khôi phục giá trị cũ nếu vẫn tồn tại
+    if (categories.includes(prevCat)) {
+        catSelect.value = prevCat;
+    } else {
+        catSelect.value = 'all';
+    }
+}
+
+// ── Cập nhật dropdown Thương Hiệu theo Danh Mục đang chọn ───────────
+function updateBrandDropdown(selectedCategory) {
+    const brandSelect = document.getElementById('filter-brand');
+    if (!brandSelect) return;
+
+    // Lưu lại brand đang chọn để khôi phục nếu vẫn còn hợp lệ
+    const prevBrand = brandSelect.value;
+
+    // Lọc sản phẩm theo danh mục
+    const source = selectedCategory === 'all'
+        ? allProducts
+        : allProducts.filter(p => p.category.toLowerCase() === selectedCategory.toLowerCase());
+
+    const brands = [...new Set(source.map(p => p.brand).filter(Boolean))].sort();
+
+    // Xây lại options
+    brandSelect.innerHTML = '<option value="all">Tất cả thương hiệu</option>';
+    brands.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b;
+        opt.textContent = b;
+        brandSelect.appendChild(opt);
+    });
+
+    // Giữ lại brand cũ nếu vẫn tồn tại, ngược lại reset về 'all'
+    if (brands.includes(prevBrand)) {
+        brandSelect.value = prevBrand;
+    } else {
+        brandSelect.value = 'all';
+    }
+}
+
 // ── Áp dụng Bộ Lọc Đa Năng (Apply Multi-Filters) ────────────────────
 function applyFilters() {
     const q = document.getElementById('filter-search').value.toLowerCase().trim();
@@ -380,17 +438,34 @@ async function fetchAllData() {
         allProducts = products;
         allOosData = oosList;
 
-        // Điền danh sách thương hiệu động vào Dropdown
-        const brandSelect = document.getElementById('filter-brand');
-        if (brandSelect) {
-            brandSelect.innerHTML = '<option value="all">Tất cả thương hiệu</option>';
-            const brands = [...new Set(products.map(p => p.brand).filter(Boolean))].sort();
-            brands.forEach(b => {
-                const opt = document.createElement('option');
-                opt.value = b;
-                opt.textContent = b;
-                brandSelect.appendChild(opt);
-            });
+        // Xây dựng cả 2 dropdown từ dữ liệu thực
+        updateCategoryDropdown();
+        updateBrandDropdown('all');
+
+        // Đọc URL query params để tự động áp bộ lọc (ví dụ: ?category=Laptop&brand=Asus)
+        const params = new URLSearchParams(window.location.search);
+        const urlCat   = params.get('category');
+        const urlBrand = params.get('brand');
+        const urlStatus = params.get('status');
+
+        if (urlCat) {
+            const catSel = document.getElementById('filter-category');
+            if ([...catSel.options].some(o => o.value.toLowerCase() === urlCat.toLowerCase())) {
+                catSel.value = [...catSel.options].find(o => o.value.toLowerCase() === urlCat.toLowerCase()).value;
+                updateBrandDropdown(catSel.value); // refresh brands for this category
+            }
+        }
+        if (urlBrand) {
+            const brandSel = document.getElementById('filter-brand');
+            if ([...brandSel.options].some(o => o.value.toLowerCase() === urlBrand.toLowerCase())) {
+                brandSel.value = [...brandSel.options].find(o => o.value.toLowerCase() === urlBrand.toLowerCase()).value;
+            }
+        }
+        if (urlStatus) {
+            const statusSel = document.getElementById('filter-status');
+            if ([...statusSel.options].some(o => o.value === urlStatus)) {
+                statusSel.value = urlStatus;
+            }
         }
 
         // Áp dụng bộ lọc lần đầu
@@ -424,7 +499,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Lắng nghe sự kiện của bộ lọc
     document.getElementById('filter-search').addEventListener('input', applyFilters);
-    document.getElementById('filter-category').addEventListener('change', applyFilters);
+    document.getElementById('filter-category').addEventListener('change', () => {
+        // Khi đổi danh mục: cập nhật dropdown thương hiệu trước, rồi mới lọc
+        const selectedCat = document.getElementById('filter-category').value;
+        updateBrandDropdown(selectedCat);
+        applyFilters();
+    });
     document.getElementById('filter-brand').addEventListener('change', applyFilters);
     document.getElementById('filter-status').addEventListener('change', applyFilters);
 

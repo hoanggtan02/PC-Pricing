@@ -1,4 +1,4 @@
-﻿<?php // flash-sale.php — Flash Sale Detector ?>
+<?php // flash-sale.php — Flash Sale Detector ?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -106,10 +106,35 @@
         <div class="glass-card table-section">
             <div class="section-header">
                 <h2><i class="bi bi-lightning-charge"></i> Tất cả sản phẩm đang Flash Sale</h2>
-                <select id="flash-store-filter" class="glass-select">
-                    <option value="all">Tất cả cửa hàng</option>
-                </select>
             </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0.75rem;margin-bottom:1.25rem;align-items:end;">
+                <div>
+                    <label style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:0.4rem;display:block;">Tìm kiếm</label>
+                    <div style="position:relative;">
+                        <input type="text" id="flash-search-filter" class="glass-input" placeholder="Tên SP, SKU..." style="padding-left:2.2rem;">
+                        <i class="bi bi-search" style="position:absolute;left:0.8rem;top:50%;transform:translateY(-50%);color:var(--text-muted);"></i>
+                    </div>
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:0.4rem;display:block;">Cửa hàng</label>
+                    <select id="flash-store-filter" class="glass-select" style="width:100%;">
+                        <option value="all">Tất cả cửa hàng</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:0.4rem;display:block;">Danh mục</label>
+                    <select id="flash-category-filter" class="glass-select" style="width:100%;">
+                        <option value="all">Tất cả danh mục</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:var(--text-muted);font-weight:600;margin-bottom:0.4rem;display:block;">Thương hiệu</label>
+                    <select id="flash-brand-filter" class="glass-select" style="width:100%;">
+                        <option value="all">Tất cả thương hiệu</option>
+                    </select>
+                </div>
+            </div>
+
             <div id="flash-empty">
                 <i class="bi bi-check-circle" style="font-size:3rem;color:var(--green)"></i>
                 <p style="margin-top:1rem;font-size:1.1rem;font-weight:600">Không có Flash Sale nào đang diễn ra</p>
