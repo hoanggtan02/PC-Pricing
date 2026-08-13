@@ -31,12 +31,13 @@ COMPETITOR = "Hà Nội Computer"
 BASE_URL = "https://hacom.vn"
 BRANDS = {
     "dell": "https://hacom.vn/tim?q=laptop+dell&scat_id=141",
-    "lenovo": "https://hacom.vn/tim?q=laptop+lenovo&scat_id=141",
-    "apple": "https://hacom.vn/tim?q=macbook&scat_id=141",
-    "hp": "https://hacom.vn/tim?q=laptop+hp&scat_id=141",
-    "asus": "https://hacom.vn/tim?q=laptop+asus&scat_id=141",
-    "acer": "https://hacom.vn/tim?q=laptop+acer&scat_id=141",
-    "msi": "https://hacom.vn/tim?q=laptop+msi&scat_id=141",
+    "lenovo": "https://hacom.vn/tim?q=Laptop+Lenovo&scat_id=149",
+    "apple": "https://hacom.vn/tim?q=Macbook&scat_id=145",
+    "hp": "https://hacom.vn/tim?q=Laptop+HP&scat_id=148",
+    "asus": "https://hacom.vn/tim?q=Laptop+Asus&scat_id=142",
+    "acer": "https://hacom.vn/tim?q=Laptop+Acer&scat_id=144",
+    "msi": "https://hacom.vn/tim?q=Laptop+MSI&scat_id=540",
+    "gigabyte": "https://hacom.vn/tim?q=Laptop+Gigabyte&scat_id=2480",
 }
 
 # Laptop: thẻ sản phẩm là anchor /laptop-* (brand áp bằng khớp SKU). Danh mục khác chờ h3[title]

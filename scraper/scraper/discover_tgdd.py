@@ -39,6 +39,7 @@ BRANDS = {
     "asus": "https://www.thegioididong.com/laptop-asus",
     "acer": "https://www.thegioididong.com/laptop-acer",
     "msi": "https://www.thegioididong.com/laptop-msi",
+    "gigabyte": "https://www.thegioididong.com/laptop-gigabyte",
 }
 
 CARD_SELECTOR = "li.item"

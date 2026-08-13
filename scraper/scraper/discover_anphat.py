@@ -44,6 +44,7 @@ BRANDS = {
     "asus": "https://www.anphatpc.com.vn/tim?scat_id=&q=laptop+asus",
     "acer": "https://www.anphatpc.com.vn/tim?scat_id=&q=laptop+acer",
     "msi": "https://www.anphatpc.com.vn/tim?scat_id=&q=laptop+msi",
+    "gigabyte": "https://www.anphatpc.com.vn/tim?scat_id=&q=laptop+gigabyte",
 }
 
 CARD_SELECTOR = ".p-text"

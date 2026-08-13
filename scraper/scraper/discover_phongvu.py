@@ -35,6 +35,7 @@ BRANDS = {
     "asus": "https://phongvu.vn/c/laptop-asus",
     "acer": "https://phongvu.vn/c/laptop-acer",
     "msi": "https://phongvu.vn/c/laptop-msi",
+    "gigabyte": "https://phongvu.vn/c/laptop-gigabyte",
 }
 
 PRICE_SELECTOR = ".att-product-detail-latest-price"

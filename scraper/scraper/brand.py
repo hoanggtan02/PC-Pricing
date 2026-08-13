@@ -52,7 +52,7 @@ def _prefix_re() -> re.Pattern:
 
 
 # Tương thích ngược: các thương hiệu ta từng lặp qua trong quy trình laptop.
-TRACKED = ["dell", "lenovo", "apple", "hp", "asus", "acer", "msi"]
+TRACKED = ["dell", "lenovo", "apple", "hp", "asus", "acer", "msi", "gigabyte"]
 
 
 # Từ spec/đơn vị KHÔNG BAO GIỜ là thương hiệu — dùng để bỏ qua khi trích brand theo cấu trúc,

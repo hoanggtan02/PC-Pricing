@@ -37,6 +37,7 @@ BRANDS = {
     "asus": "https://cellphones.com.vn/laptop/asus.html",
     "acer": "https://cellphones.com.vn/laptop/acer.html",
     "msi": "https://cellphones.com.vn/laptop/msi.html",
+    "gigabyte": "https://cellphones.com.vn/laptop/gigabyte.html",
 }
 
 # Các selector của thẻ sản phẩm (DOM sau khi render).

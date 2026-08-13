@@ -38,6 +38,7 @@ BRANDS = {
     "asus": "https://gearvn.com/collections/laptop-asus-hoc-tap-va-lam-viec",
     "acer": "https://gearvn.com/collections/laptop-acer-hoc-tap-va-lam-viec",
     "msi": "https://gearvn.com/collections/laptop-msi-hoc-tap-va-lam-viec",
+    "gigabyte": "https://gearvn.com/collections/laptop-gaming-gigabyte",
 }
 
 PRICE_SELECTOR = ".proloop-price"

@@ -39,6 +39,7 @@ BRANDS = {
     "asus": "https://memoryzone.com.vn/search?query=laptop%20asus",
     "acer": "https://memoryzone.com.vn/search?query=laptop%20acer",
     "msi": "https://memoryzone.com.vn/search?query=laptop%20msi",
+    "gigabyte": "https://memoryzone.com.vn/laptop-gigabyte",
 }
 
 PRICE_SELECTOR = ".ae-price--primary"

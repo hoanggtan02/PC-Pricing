@@ -44,9 +44,11 @@ BRANDS = {
     "asus": "https://www.tnc.com.vn/laptop-asus-chinh-hang.html?p={page}",
     "acer": "https://www.tnc.com.vn/laptop-acer-chinh-hang.html?p={page}",
     "msi": "https://www.tnc.com.vn/laptop-msi-chinh-hang.html?p={page}",
+    "gigabyte": "https://www.tnc.com.vn/laptop-gigabyte-chinh-hang.html?p={page}",
 }
-PAGE_CAP = 50  # chốt an toàn chống lặp vô hạn; phân trang bình thường TỰ DỪNG sớm hơn (trang hết/
-               # không thêm sản phẩm mới). Chạm cap = cảnh báo. (Trước là 15 → cắt nhầm man-hình ≥25 trang.)
+# Một số danh mục lớn của TNC (màn hình, linh kiện...) vượt xa 50 trang. Chỉ là chốt an toàn khi
+# URL phân trang bị lỗi/lặp; việc dừng bình thường dựa trên việc trang không còn card sản phẩm mới.
+PAGE_CAP = 150
 
 CARD_SELECTOR = ".cr-product-details"
 PRICE_SELECTOR = ".new-price"
@@ -73,7 +75,7 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     """Trả về [{name, price, url, in_stock}] cho mọi sản phẩm `brand` của `category`.
 
     Tự động phân trang ?p=1,2,... cho đến khi một trang không còn SẢN PHẨM mới (while loop, tự dừng;
-    PAGE_CAP=50 chỉ là chốt an toàn).
+    PAGE_CAP=200 chỉ là chốt an toàn).
     Laptop: lọc theo brand. Danh mục khác: một URL cho cả danh mục, giữ lại theo name_match.
 
     Hàng hết ("Liên hệ"): TNC vẫn LIỆT KÊ các sản phẩm hết hàng (đẩy về cuối danh sách), nhưng ô
@@ -94,7 +96,9 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     if not url_tpls:
         return []
     results: list[dict] = []
-    seen: set[str] = set()   # dedup XUYÊN các trang TNC (sản phẩm xuất hiện ở >1 trang chỉ tính 1 lần)
+    # Dedup theo toàn bộ card catalog, KHÔNG chỉ các item sau lọc. Nhờ vậy ta nhận biết đúng trang
+    # phân trang đã lặp lại, nhưng không dừng nhầm khi một trang tạm thời không có item khớp regex.
+    seen_catalog: set[str] = set()
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(
@@ -104,28 +108,29 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
             )
         )
         for url_tpl in url_tpls:   # quét lần lượt từng trang catalog của category
-            # Phân trang tối đa PAGE_CAP trang; DỪNG SỚM khi một trang không thêm sản phẩm mới (bình
-            # thường), hoặc trang lỗi/trống. Nếu quét HẾT PAGE_CAP mà trang cuối VẪN đầy sản phẩm →
+            # Phân trang tối đa PAGE_CAP trang; DỪNG SỚM khi một trang không thêm CARD catalog mới
+            # (bình thường), hoặc trang lỗi/trống. Không dựa vào số item SAU lọc: một trang có thể
+            # toàn phụ kiện/brand khác nhưng những trang sau vẫn có sản phẩm thuộc category cần lấy.
+            # Nếu quét HẾT PAGE_CAP mà trang cuối VẪN đầy sản phẩm →
             # danh mục còn dài hơn → cảnh báo để nâng PAGE_CAP (trước là 15 → cắt nhầm màn hình).
             for n in range(1, PAGE_CAP + 1):
                 # domcontentloaded, không phải networkidle — các tracker của TNC khiến mạng luôn bận
                 # nên networkidle sẽ bị timeout. Trang 1 được thử lại (nếu hỏng là lỗi thật, dẫn tới 0
                 # kết quả); trang 2+ hỏng chỉ nghĩa là đã hết trang nên dừng bình thường.
                 if n == 1:
-                    if not goto_with_retry(page, url_tpl.format(page=n), PRICE_SELECTOR, label=COMPETITOR):
+                    if not goto_with_retry(page, url_tpl.format(page=n), CARD_SELECTOR, label=COMPETITOR):
                         break
                 else:
                     try:
                         page.goto(url_tpl.format(page=n), wait_until="domcontentloaded", timeout=60000)
-                        page.wait_for_selector(PRICE_SELECTOR, timeout=20000)
+                        page.wait_for_selector(CARD_SELECTOR, timeout=20000)
                     except Exception:
                         break  # trang chậm/rỗng/trang cuối
 
-                new_on_page = 0
+                new_catalog_items = 0
                 for card in page.query_selector_all(CARD_SELECTOR):
-                    price_el = card.query_selector(PRICE_SELECTOR)
                     link_el = card.query_selector('a[href*=".html"]')
-                    if not price_el or not link_el:
+                    if not link_el:
                         continue
                     name = (link_el.inner_text() or "").strip()
                     href = link_el.get_attribute("href")
@@ -139,27 +144,33 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
                         if re.search(r"\d", slug_name):
                             name = slug_name
                     key = url or name
+                    if not name or key in seen_catalog:
+                        continue
+                    # Đánh dấu/nghiệm thu card TRƯỚC bước lọc. Đây là điều kiện dừng phân trang:
+                    # một trang có card mới nhưng chưa khớp category vẫn không phải là trang cuối.
+                    seen_catalog.add(key)
+                    new_catalog_items += 1
                     # Laptop: giữ đúng brand. Danh mục khác: giữ tên khớp name_match.
                     keep = (brand_of(name).lower() == want) if want else bool(name_re and name_re.search(name))
                     # Loại tên khớp name_exclude (vd "PC TNC ..." — hàng build riêng của shop).
                     if excl_re and excl_re.search(name):
                         keep = False
-                    if not name or not keep or key in seen:
+                    if not keep:
                         continue
                     # "Liên hệ" -> không có chữ số -> price None -> hết hàng; còn số -> còn hàng.
                     # VẪN thu thập hàng hết (không bỏ qua) để đánh dấu OOS về sau.
-                    price = _digits_to_int(price_el.inner_text())
+                    price_el = card.query_selector(PRICE_SELECTOR)
+                    price = _digits_to_int(price_el.inner_text()) if price_el else None
                     in_stock = price is not None
                     # Cờ khuyến mãi: thẻ có .promo-container thì trang sản phẩm CÓ THỂ có "Giá cuối"
                     # (flash sale) THẤP HƠN .new-price. Giá cuối chỉ hiện ở TRANG SẢN PHẨM (không có
                     # trên thẻ danh sách), nên chỉ ghé thăm những sản phẩm có cờ này để lấy giá thật.
                     has_promo = card.query_selector(".promo-container") is not None
-                    seen.add(key)
-                    new_on_page += 1
                     results.append({"name": name, "price": price, "url": url,
                                     "in_stock": in_stock, "has_promo": has_promo})
 
-                if new_on_page == 0:  # không còn sản phẩm nào (kể cả hàng hết) -> hết trang thật sự
+                # Không còn card catalog chưa thấy = trang cuối thật, hoặc website trả lặp lại trang trước.
+                if new_catalog_items == 0:
                     break
             else:
                 # for..else: chạy khi vòng lặp KHÔNG break — tức đã quét đủ PAGE_CAP trang mà trang
