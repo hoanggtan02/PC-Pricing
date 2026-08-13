@@ -117,10 +117,26 @@ def upsert_products(client: Client, rows: list[dict]) -> None:
 
 
 def upsert_sources(client: Client, rows: list[dict]) -> None:
-    """Upsert nhiều source trong một lời gọi, khóa theo (product_sku, competitor)."""
+    """Upsert nhiều source trong một lời gọi, khóa theo (product_sku, competitor).
+    KHÔNG ghi đè URL nếu source đó đã được sửa tay (is_manual_url = True).
+    """
     rows = _dedupe(rows, lambda r: (r["product_sku"], r["competitor"]))
-    if rows:
-        client.table("sources").upsert(rows, on_conflict="product_sku,competitor").execute()
+    if not rows:
+        return
+        
+    try:
+        # Lấy danh sách các sources đã được cấu hình thủ công
+        manual_res = client.table("sources").select("product_sku, competitor").eq("is_manual_url", True).execute()
+        manual_keys = {(s["product_sku"], s["competitor"]) for s in (manual_res.data or [])}
+    except Exception as e:
+        print(f"Warning: Không thể kiểm tra các sources sửa thủ công: {e}. Tiến hành ghi đè bình thường.")
+        manual_keys = set()
+        
+    # Lọc bỏ các sources đã sửa thủ công khỏi danh sách upsert để tránh ghi đè URL
+    to_upsert = [r for r in rows if (r["product_sku"], r["competitor"]) not in manual_keys]
+    
+    if to_upsert:
+        client.table("sources").upsert(to_upsert, on_conflict="product_sku,competitor").execute()
 
 
 def insert_prices(client: Client, rows: list[dict]) -> None:

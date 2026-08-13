@@ -343,9 +343,14 @@ const DM = (() => {
             const isActive = $('edit-src-active').checked;
             if (!newUrl) { toast('URL không được để trống', 'error'); return false; }
             try {
-                await sbPatch('sources', { product_sku: sku, competitor }, { url: newUrl, active: isActive });
+                const patchData = { url: newUrl, active: isActive };
+                if (newUrl !== src.url) {
+                    patchData.is_manual_url = true;
+                }
+                await sbPatch('sources', { product_sku: sku, competitor }, patchData);
                 src.url = newUrl;
                 src.active = isActive;
+                if (newUrl !== src.url) src.is_manual_url = true;
                 renderSources();
                 toast(`Đã cập nhật nguồn ${competitor} cho SKU ${sku}`, 'success');
                 return true;
@@ -375,14 +380,15 @@ const DM = (() => {
 
             const price = data.price;
             
-            // Cập nhật URL mới vào sources nếu có thay đổi (Dùng anon key update bảng sources, vì RLS của sources cho phép UPDATE)
-            await sbPatch('sources', { product_sku: sku, competitor: competitor }, { url: url });
+            // Cập nhật URL mới vào sources nếu có thay đổi và đánh dấu là URL thủ công
+            await sbPatch('sources', { product_sku: sku, competitor: competitor }, { url: url, is_manual_url: true });
             
             // Cập nhật lại cache (chỉ trên giao diện)
             const src = _sources.find(s => s.product_sku === sku && s.competitor === competitor);
             if (src) {
                 src._priceInfo = { price: price, scraped_at: new Date().toISOString() };
                 src.url = url;
+                src.is_manual_url = true;
             }
             renderSources();
 

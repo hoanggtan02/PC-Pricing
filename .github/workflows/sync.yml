@@ -1,0 +1,57 @@
+name: Daily price sync (Mode B - Link crawl)
+# ─────────────────────────────────────────────────────────────────────────────
+# Mode B: Đồng bộ giá theo link trực tiếp từ DB — NHANH, tiết kiệm tài nguyên.
+# Chạy MỖI NGÀY (kể cả cuối tuần). Không khám phá SP mới, chỉ cập nhật giá
+# cho các SKU đã có trong sources. URL thủ công (is_manual_url=true) được bảo vệ.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    # Run 1: 01:00 VN (18:00 UTC hôm trước) → xong ~02:00 VN
+    - cron: "0 18 * * *"
+    # Run 2: 13:00 VN (06:00 UTC) → xong ~14:00 VN
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# Chỉ 1 lần chạy tại một thời điểm (tránh đụng Supabase)
+concurrency:
+  group: daily-price-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Sync prices from existing source URLs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+        run: |
+          echo "::group::Mode B - Sync prices"
+          python -m scraper.sync_prices
+          echo "::endgroup::"
+
+      # Refresh cache ngay sau khi sync (sync_prices đã gọi nội bộ, đây là bước
+      # dự phòng riêng để CI đỏ rõ ràng nếu refresh thất bại).
+      - name: Refresh latest_prices cache
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m scraper.refresh_views

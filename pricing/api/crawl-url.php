@@ -104,7 +104,6 @@ if ($price > 0) {
             CURLOPT_POSTFIELDS => '{}',
             CURLOPT_SSL_VERIFYPEER => false
         ]);
-
         $refreshRes = curl_exec($chRefresh);
         $refreshStatus = curl_getinfo($chRefresh, CURLINFO_HTTP_CODE);
         $refreshError = curl_error($chRefresh);
@@ -126,3 +125,4 @@ if ($price > 0) {
 } else {
     echo json_encode(['success' => false, 'error' => 'Could not extract price from this URL.']);
 }
+
