@@ -15,3 +15,23 @@ dashboard/dist/
 # OS / editor
 .DS_Store
 .vscode/
+
+# Public repository: chỉ giữ scraper và hai GitHub Actions dùng để cào dữ liệu.
+# Các thư mục dashboard/PHP/schema/tài liệu vẫn ở local nhưng không được đưa lên GitHub.
+/*
+!/.gitignore
+!/.github/
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/scrape.yml
+!/.github/workflows/sync.yml
+!/scraper/
+!/scraper/**
+
+# Các ngoại lệ đặt sau rule allow scraper để không vô tình public secrets/cache.
+/scraper/.env
+/scraper/**/*.local
+/scraper/**/__pycache__/
+/scraper/**/*.py[cod]
+/scraper/.venv/
+/scraper/venv/
