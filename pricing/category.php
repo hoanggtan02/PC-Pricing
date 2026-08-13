@@ -255,6 +255,6 @@ include 'includes/body-start.php';
         </main>
 
 <?php
-$extraScripts = '<script src="assets/category.js"></script>';
+$extraScripts = '<script src="assets/category.js?v=10002"></script>';
 include 'includes/footer.php';
 ?>

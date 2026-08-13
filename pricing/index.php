@@ -227,7 +227,8 @@ ob_start();
                         const oos = oosMap.get(cat.toLowerCase()) || 0;
                         const avg = data.countDelta > 0 ? (data.sumDelta / data.countDelta).toFixed(1) : null;
                         const card = document.createElement('a');
-                        card.href = `category.php?name=${encodeURIComponent(cat)}`;
+                        // category.js nhận tham số `category` để tự áp bộ lọc lúc tải trang.
+                        card.href = `category.php?category=${encodeURIComponent(cat)}`;
                         card.className = 'glass-card category-nav-card';
                         card.innerHTML = `
                             <div class="card-header">

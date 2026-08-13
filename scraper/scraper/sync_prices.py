@@ -18,7 +18,8 @@ from playwright.async_api import async_playwright, Page
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from .db import get_client, insert_price, fetch_active_sources
+from .config import is_old_listing_name
+from .db import deactivate_source, get_client, insert_price, fetch_active_sources
 
 CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa
 USER_AGENT = (
@@ -130,6 +131,16 @@ async def scrape_source(context, source: dict, dry_run: bool, client) -> bool:
         # Đợi thêm 1s để chắc chắn JS render xong
         await page.wait_for_timeout(1500)
         
+        # Một URL có thể bị shop đổi sang hàng cũ/demo sau khi đã ghép SKU.
+        # Không ghi giá đó và tắt source để cache lần refresh sau loại nó.
+        title = await page.title()
+        if is_old_listing_name(title):
+            print(f"  [OLD] {competitor} - {sku}: tắt source ({title[:80]})")
+            if not dry_run:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, deactivate_source, client, sku, competitor)
+            return False
+
         price = await extract_price_generic(page, competitor)
         
         if price:
@@ -213,7 +224,9 @@ async def run_sync(dry_run: bool, limit: int | None = None):
         
     print(f"\nHoàn tất đồng bộ giá: Thành công {results['success']}, Thất bại {results['failed']}.")
     
-    if not dry_run and results['success'] > 0:
+    # Refresh cả khi chỉ có source bị tắt vì hàng cũ/demo (không có giá mới thành công).
+    # Nếu chỉ refresh khi success > 0, giá cũ vẫn kẹt trong snapshot.
+    if not dry_run:
         print("Đang làm mới cache Supabase...")
         try:
             client.rpc("refresh_latest_prices").execute()

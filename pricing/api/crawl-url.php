@@ -43,7 +43,17 @@ function extractPrice($html) {
     return 0;
 }
 
-$price = extractPrice($html);
+function isOldProductListing($html) {
+    // Chỉ xét title/og:title để tránh loại nhầm vì mô tả trang có nhắc hàng cũ.
+    $title = '';
+    if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $html, $m)) $title .= ' ' . html_entity_decode(strip_tags($m[1]));
+    if (preg_match('/property=["\']og:title["\'][^>]*content=["\']([^"\']+)["\']/is', $html, $m)) $title .= ' ' . html_entity_decode($m[1]);
+    if (preg_match('/content=["\']([^"\']+)["\'][^>]*property=["\']og:title["\']/is', $html, $m)) $title .= ' ' . html_entity_decode($m[1]);
+
+    return preg_match('/\btray\b|\bdemo\b|\bcũ\b|\blike\b|nhập khẩu|xách tay|\busa\b|xước|cấn/iu', $title) === 1;
+}
+
+$price = isOldProductListing($html) ? 0 : extractPrice($html);
 
 if ($price > 0) {
     [$supabaseUrl, $supabaseKey] = getSupabaseConfig();
@@ -115,5 +125,5 @@ if ($price > 0) {
         echo json_encode(['success' => false, 'error' => "Supabase API Error (HTTP $sbStatus): $sbRes"]);
     }
 } else {
-    echo json_encode(['success' => false, 'error' => 'Could not extract price from this URL.']);
+    echo json_encode(['success' => false, 'error' => 'Could not extract a valid price, or this URL is marked as old/demo stock.']);
 }

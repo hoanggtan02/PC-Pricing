@@ -466,7 +466,8 @@ async function fetchAllData() {
 
         // Đọc URL query params để tự động áp bộ lọc (ví dụ: ?category=Laptop&brand=Asus)
         const params = new URLSearchParams(window.location.search);
-        const urlCat   = params.get('category');
+        // `name` là tên tham số cũ; giữ fallback để link/bookmark cũ vẫn lọc đúng.
+        const urlCat   = params.get('category') || params.get('name');
         const urlBrand = params.get('brand');
         const urlStatus = params.get('status');
 

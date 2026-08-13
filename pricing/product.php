@@ -1,4 +1,5 @@
 <?php
+$initialSku = trim((string)($_GET['sku'] ?? ''));
 $pageTitle = "Chi Tiết Sản Phẩm - TNC Dashboard";
 $extraHeadHtml = <<<'HTML'
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -171,6 +172,9 @@ include 'includes/body-start.php';
     </main>
 
 <?php
-$extraScripts = '<script src="assets/product.js"></script>';
+$extraScripts = '<script>const INITIAL_SKU = ' . json_encode(
+    $initialSku,
+    JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+) . ';</script><script src="assets/product.js?v=10002"></script>';
 include 'includes/footer.php';
 ?>

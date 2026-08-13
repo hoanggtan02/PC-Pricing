@@ -61,6 +61,13 @@ def fetch_active_sources(client: Client) -> list[dict]:
     return resp.data or []
 
 
+def deactivate_source(client: Client, product_sku: str, competitor: str) -> None:
+    """Tắt source khi URL trỏ tới hàng cũ/demo, nhưng giữ lịch sử để audit."""
+    client.table("sources").update({"active": False}).match(
+        {"product_sku": product_sku, "competitor": competitor}
+    ).execute()
+
+
 def ensure_competitor(client: Client, name: str, is_self: bool = False) -> None:
     """Đăng ký một competitor vào registry nếu chưa tồn tại.
 
