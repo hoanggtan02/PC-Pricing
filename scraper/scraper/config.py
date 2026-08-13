@@ -18,6 +18,10 @@ import yaml
 
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "sources.yaml"
 
+# Hàng cũ/demo thường có giá thấp bất thường và không thể so sánh với hàng mới.
+# Áp dụng cho mọi danh mục, kể cả Laptop (vốn không luôn dùng name_exclude theo category).
+_OLD_LISTING_PATTERN = r"\btray\b|\bdemo\b|\bcũ\b|\blike\b|nhập khẩu|xách tay|\busa\b|xước|cấn"
+
 
 @functools.lru_cache(maxsize=1)
 def _config() -> dict:
@@ -54,7 +58,13 @@ def name_exclude_re(category: str) -> re.Pattern | None:
     """Regex loại BỎ — sản phẩm khớp mẫu này bị loại dù đã khớp name_match (ví dụ giá đỡ/tay treo
     màn hình: tên chứa 'màn hình' nhưng không phải màn hình). None nếu category không cấu hình."""
     pat = category_meta(category).get("name_exclude")
-    return re.compile(pat, re.IGNORECASE) if pat else None
+    combined = "|".join(p for p in (pat, _OLD_LISTING_PATTERN) if p)
+    return re.compile(combined, re.IGNORECASE)
+
+
+def is_old_listing_name(name: str) -> bool:
+    """True nếu tiêu đề listing có dấu hiệu hàng cũ/không bán theo chuẩn hàng mới."""
+    return bool(re.search(_OLD_LISTING_PATTERN, name or "", re.IGNORECASE))
 
 
 def tnc_urls(category: str) -> list[str]:

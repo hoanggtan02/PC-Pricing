@@ -114,7 +114,7 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
         for it in items:
             name = it["name"]
             # Danh mục (không phải laptop): giữ tên khớp name_match — URL /c/ có thể lẫn phụ kiện.
-            if not is_laptop and (not (name_re and name_re.search(name)) or (excl_re and excl_re.search(name))):
+            if (excl_re and excl_re.search(name)) or (not is_laptop and not (name_re and name_re.search(name))):
                 continue
             price = _digits_to_int(it["price"])
             href = it["url"]
