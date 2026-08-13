@@ -89,7 +89,37 @@ if ($price > 0) {
     curl_close($chSb);
     
     if ($sbStatus >= 200 && $sbStatus < 300) {
-        echo json_encode(['success' => true, 'price' => $price, 'url' => $url]);
+        // latest_prices_cache là snapshot, không tự đổi khi price_history có bản ghi mới.
+        // Refresh ngay để product_overview (và category.php) nhìn thấy giá vừa cào.
+        $chRefresh = curl_init("$supabaseUrl/rest/v1/rpc/refresh_latest_prices");
+        curl_setopt_array($chRefresh, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                "apikey: $supabaseKey",
+                "Authorization: Bearer $supabaseKey",
+                "Content-Type: application/json",
+                "Prefer: return=minimal"
+            ],
+            CURLOPT_POSTFIELDS => '{}',
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
+
+        $refreshRes = curl_exec($chRefresh);
+        $refreshStatus = curl_getinfo($chRefresh, CURLINFO_HTTP_CODE);
+        $refreshError = curl_error($chRefresh);
+        curl_close($chRefresh);
+
+        if ($refreshStatus >= 200 && $refreshStatus < 300) {
+            echo json_encode(['success' => true, 'price' => $price, 'url' => $url]);
+        } else {
+            // Giá đã được lưu nhưng cache chưa thể làm mới: báo lỗi rõ ràng để tránh UI nói là đã cập nhật.
+            $detail = $refreshError ?: $refreshRes;
+            echo json_encode([
+                'success' => false,
+                'error' => "Price was saved, but the dashboard cache could not refresh (HTTP $refreshStatus): $detail"
+            ]);
+        }
     } else {
         echo json_encode(['success' => false, 'error' => "Supabase API Error (HTTP $sbStatus): $sbRes"]);
     }

@@ -115,7 +115,11 @@ begin
     join products    p  on p.sku = ph.product_sku
     join competitors co on co.name = ph.competitor
     join cat_cutoff  cc on cc.category = p.category
-    left join sources s on s.product_sku = ph.product_sku and s.competitor = ph.competitor
+    -- Nguồn đã tắt không được đưa vào snapshot/dashboard. Dùng inner join vì price_history
+    -- có foreign key tới sources; `active` vì thế là công tắc hiển thị lẫn scrape hiệu lực.
+    join sources s on s.product_sku = ph.product_sku
+                  and s.competitor = ph.competitor
+                  and s.active
     where ph.scraped_at > cc.cutoff
     order by ph.product_sku, ph.competitor, ph.scraped_at desc;
 end;

@@ -115,6 +115,37 @@ if ($curlErr) {
 }
 
 if ($status >= 200 && $status < 300) {
+    // latest_prices_cache là snapshot. Mọi thay đổi nguồn (nhất là bật/tắt active)
+    // phải làm mới snapshot để category.php không hiển thị nguồn đã tắt.
+    if ($table === 'sources') {
+        $refresh = curl_init("$supabaseUrl/rest/v1/rpc/refresh_latest_prices");
+        curl_setopt_array($refresh, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                "apikey: $supabaseKey",
+                "Authorization: Bearer $supabaseKey",
+                "Content-Type: application/json",
+                "Prefer: return=minimal"
+            ],
+            CURLOPT_POSTFIELDS => '{}',
+            CURLOPT_SSL_VERIFYPEER => false
+        ]);
+        $refreshRes = curl_exec($refresh);
+        $refreshStatus = curl_getinfo($refresh, CURLINFO_HTTP_CODE);
+        $refreshErr = curl_error($refresh);
+        curl_close($refresh);
+
+        if ($refreshStatus < 200 || $refreshStatus >= 300) {
+            $detail = $refreshErr ?: $refreshRes;
+            echo json_encode([
+                'success' => false,
+                'error' => "Source was saved, but the dashboard cache could not refresh (HTTP $refreshStatus): $detail"
+            ]);
+            exit;
+        }
+    }
+
     echo json_encode(['success' => true, 'status' => $status]);
 } else {
     echo json_encode(['success' => false, 'error' => "Supabase API Error (HTTP $status): $res"]);
