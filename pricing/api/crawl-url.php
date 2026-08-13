@@ -1,6 +1,7 @@
 <?php
 // api/crawl-url.php
 header('Content-Type: application/json');
+require_once __DIR__ . '/supabase-config.php';
 
 $url = $_GET['url'] ?? '';
 $sku = $_GET['sku'] ?? '';
@@ -45,19 +46,10 @@ function extractPrice($html) {
 $price = extractPrice($html);
 
 if ($price > 0) {
-    // Đọc .env để lấy SUPABASE Service Role Key
-    $envPath = __DIR__ . '/../../scraper/.env';
-    $supabaseUrl = '';
-    $supabaseKey = '';
-    
-    if (file_exists($envPath)) {
-        $env = parse_ini_file($envPath);
-        $supabaseUrl = $env['SUPABASE_URL'] ?? '';
-        $supabaseKey = $env['SUPABASE_KEY'] ?? '';
-    }
+    [$supabaseUrl, $supabaseKey] = getSupabaseConfig();
     
     if (!$supabaseUrl || !$supabaseKey) {
-        echo json_encode(['success' => false, 'error' => 'Could not read Supabase config from .env']);
+        echo json_encode(['success' => false, 'error' => 'Supabase configuration is missing. Set SUPABASE_URL and SUPABASE_KEY as server environment variables, or create pricing/.env.']);
         exit;
     }
     
@@ -125,4 +117,3 @@ if ($price > 0) {
 } else {
     echo json_encode(['success' => false, 'error' => 'Could not extract price from this URL.']);
 }
-

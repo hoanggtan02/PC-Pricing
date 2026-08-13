@@ -18,6 +18,7 @@ header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
+require_once __DIR__ . '/supabase-config.php';
 
 // Preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -59,19 +60,11 @@ if (empty($table)) {
     exit;
 }
 
-// Đọc service role key từ .env
-$envPath = __DIR__ . '/../../scraper/.env';
-$supabaseUrl = '';
-$supabaseKey = '';
-
-if (file_exists($envPath)) {
-    $env = parse_ini_file($envPath);
-    $supabaseUrl = $env['SUPABASE_URL'] ?? '';
-    $supabaseKey = $env['SUPABASE_KEY'] ?? '';
-}
+// Ưu tiên biến môi trường web server; pricing/.env là fallback khi deploy riêng pricing.
+[$supabaseUrl, $supabaseKey] = getSupabaseConfig();
 
 if (!$supabaseUrl || !$supabaseKey) {
-    echo json_encode(['success' => false, 'error' => 'Could not read Supabase config from .env']);
+    echo json_encode(['success' => false, 'error' => 'Supabase configuration is missing. Set SUPABASE_URL and SUPABASE_KEY as server environment variables, or create pricing/.env.']);
     exit;
 }
 
