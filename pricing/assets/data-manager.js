@@ -106,25 +106,34 @@ const DM = (() => {
         document.getElementById(`panel-${name}`).classList.add('active');
     }
 
-    // ── Supabase PATCH helper ────────────────────────────────────────
-    async function sbPatch(table, match, data) {
-        const params = Object.entries(match).map(([k,v]) => `${k}=eq.${encodeURIComponent(v)}`).join('&');
-        const url = `${SUPABASE_URL}/rest/v1/${table}?${params}`;
-        const res = await fetch(url, {
-            method: 'PATCH',
-            headers: { ...headers, 'Prefer': 'return=minimal' },
-            body: JSON.stringify(data)
+    // ── Supabase Write Proxy (PHP + service role key → bypass RLS) ─────────────
+    async function _sbProxy(method, table, match, data) {
+        const res = await fetch('api/supabase-proxy.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ method, table, match: match || {}, data: data || {} })
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (!json.success) throw new Error(json.error || 'Unknown proxy error');
+        return json;
+    }
+
+    // ── Supabase PATCH helper ─────────────────────────────────────────
+    async function sbPatch(table, match, data) {
+        return _sbProxy('PATCH', table, match, data);
     }
 
     // ── Supabase DELETE helper ───────────────────────────────────────
     async function sbDelete(table, match) {
-        const params = Object.entries(match).map(([k,v]) => `${k}=eq.${encodeURIComponent(v)}`).join('&');
-        const url = `${SUPABASE_URL}/rest/v1/${table}?${params}`;
-        const res = await fetch(url, { method: 'DELETE', headers: { ...headers, 'Prefer': 'return=minimal' } });
-        if (!res.ok) throw new Error(await res.text());
+        return _sbProxy('DELETE', table, match, null);
     }
+
+    // ── Supabase POST helper ─────────────────────────────────────────
+    async function sbPost(table, data) {
+        return _sbProxy('POST', table, null, data);
+    }
+
 
     // ── Pagination Renderer Helper ───────────────────────────────────
     function renderPaginationUI(containerId, stateKey, totalItems) {
@@ -314,7 +323,12 @@ const DM = (() => {
             </div>
             <div class="modal-form-group">
                 <label>Đường dẫn URL cào giá (*)</label>
-                <textarea class="modal-form-input" id="edit-src-url" rows="3" style="font-family:monospace;font-size:0.83rem">${esc(src.url)}</textarea>
+                <div style="display:flex;gap:0.5rem;align-items:flex-start">
+                    <textarea class="modal-form-input" id="edit-src-url" rows="3" style="font-family:monospace;font-size:0.83rem;flex:1">${esc(src.url)}</textarea>
+                    <button type="button" class="btn-primary" onclick="DM.crawlSingleUrl('${esc(sku)}', '${esc(competitor)}')" style="padding:0.6rem 0.8rem;white-space:nowrap">
+                        <i class="bi bi-cloud-download"></i> Lấy giá ngay
+                    </button>
+                </div>
             </div>
             <div class="modal-form-group">
                 <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer;margin-top:0.2rem">
@@ -340,6 +354,42 @@ const DM = (() => {
                 return false;
             }
         });
+    }
+
+    async function crawlSingleUrl(sku, competitor) {
+        const url = $('edit-src-url').value.trim();
+        if (!url) { toast('URL không được để trống', 'error'); return; }
+
+        toast('Đang cào dữ liệu từ URL...', 'info');
+        try {
+            // Gọi API PHP (PHP sẽ cào giá và cập nhật thẳng vào Supabase bằng Service Role Key để qua mặt RLS)
+            const apiUrl = `api/crawl-url.php?url=${encodeURIComponent(url)}&sku=${encodeURIComponent(sku)}&competitor=${encodeURIComponent(competitor)}`;
+            const res = await fetch(apiUrl);
+            if (!res.ok) throw new Error('API request failed');
+            const data = await res.json();
+            
+            if (!data.success) {
+                toast(data.error || 'Lỗi không xác định khi cào giá', 'error');
+                return;
+            }
+
+            const price = data.price;
+            
+            // Cập nhật URL mới vào sources nếu có thay đổi (Dùng anon key update bảng sources, vì RLS của sources cho phép UPDATE)
+            await sbPatch('sources', { product_sku: sku, competitor: competitor }, { url: url });
+            
+            // Cập nhật lại cache (chỉ trên giao diện)
+            const src = _sources.find(s => s.product_sku === sku && s.competitor === competitor);
+            if (src) {
+                src._priceInfo = { price: price, scraped_at: new Date().toISOString() };
+                src.url = url;
+            }
+            renderSources();
+
+            toast(`✅ Đã lấy được giá: ${fmt(price)} đ`, 'success');
+        } catch (e) {
+            toast('Lỗi khi cào dữ liệu: ' + e.message, 'error');
+        }
     }
 
     async function toggleActive(sku, competitor, active) {
@@ -783,7 +833,7 @@ const DM = (() => {
     return {
         switchTab, closeModal, closeEditModal, refreshAll, init,
         filterSources, filterProducts,
-        openEditSourceModal, openEditProductModal,
+        openEditSourceModal, openEditProductModal, crawlSingleUrl,
         toggleActive, deleteSource, exportSources,
         deleteProduct, exportProducts,
         histSuggest, selectHistSku, loadHistory, deleteHistoryRow,

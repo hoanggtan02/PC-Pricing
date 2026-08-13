@@ -1,10 +1,25 @@
-// =====================================================================
-// stock-gap.js — Khoảng Trống Hàng Hóa
-// Đọc view `out_of_stock_gap`: SKU mà TNC hết hàng, đối thủ còn bán
-// =====================================================================
-
 let allGapData = [];
 let gapPaginator;
+
+// ── Helper escape HTML ──────────────────────────────────────────────
+const escGap = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function closeAllGapActionMenus() {
+    document.querySelectorAll('.action-dropdown-menu').forEach(m => m.style.display = 'none');
+}
+
+function toggleGapActionMenu(event, menuId) {
+    event.stopPropagation();
+    const menu = document.getElementById(menuId);
+    if (!menu) return;
+    const isOpen = menu.style.display === 'flex';
+    closeAllGapActionMenus();
+    if (!isOpen) {
+        menu.style.display = 'flex';
+    }
+}
+
+document.addEventListener('click', () => closeAllGapActionMenus());
 
 function renderGapTablePage(data) {
     const tbody = document.getElementById('gap-table-body');
@@ -17,6 +32,7 @@ function renderGapTablePage(data) {
 
     data.forEach(row => {
         const tr = document.createElement('tr');
+        const menuKey = String(row.sku).replace(/[^a-zA-Z0-9]/g, '_');
         tr.innerHTML = `
             <td>
                 <a href="product.php?sku=${encodeURIComponent(row.sku)}" style="font-weight:600;font-size:0.9rem;color:var(--text-main);text-decoration:none">
@@ -33,10 +49,16 @@ function renderGapTablePage(data) {
             </td>
             <td style="font-weight:700;color:var(--green-500)">${formatVND(row.cheapest_competitor_price)}</td>
             <td><span class="badge badge-neutral">${row.cheapest_competitor || '—'}</span></td>
-            <td>
-                <div style="display:flex;gap:0.3rem">
-                    ${row.our_url ? `<a href="${row.our_url}" target="_blank" class="badge badge-neutral" style="text-decoration:none" title="Xác nhận trang Web TNC"><i class="bi bi-house"></i> Web TNC</a>` : ''}
-                    ${row.cheapest_competitor_url ? `<a href="${row.cheapest_competitor_url}" target="_blank" class="badge badge-red" style="text-decoration:none" title="Mở web ${row.cheapest_competitor} xác nhận giá"><i class="bi bi-box-arrow-up-right"></i> Web Đối Thủ</a>` : ''}
+            <td style="text-align:center">
+                <div class="action-dropdown-wrap">
+                    <button class="action-menu-btn" onclick="toggleGapActionMenu(event, 'act_gap_${menuKey}')" title="Tùy chọn">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <div id="act_gap_${menuKey}" class="action-dropdown-menu" style="display:none">
+                        ${row.our_url ? `<a href="${row.our_url}" target="_blank"><i class="bi bi-house" style="color:var(--accent)"></i> Web TNC</a>` : ''}
+                        ${row.cheapest_competitor_url ? `<a href="${row.cheapest_competitor_url}" target="_blank"><i class="bi bi-box-arrow-up-right" style="color:var(--red)"></i> Web ${escGap(row.cheapest_competitor || 'Đối Thủ')}</a>` : ''}
+                        <a href="product.php?sku=${encodeURIComponent(row.sku)}"><i class="bi bi-search" style="color:var(--gold)"></i> Xem chi tiết SP</a>
+                    </div>
                 </div>
             </td>
         `;
@@ -44,7 +66,6 @@ function renderGapTablePage(data) {
     });
 }
 
-// ── Build dropdown Danh Mục ───────────────────────────────────────────
 function buildGapCategoryDropdown() {
     const sel = document.getElementById('gap-category-filter');
     if (!sel) return;
@@ -59,7 +80,6 @@ function buildGapCategoryDropdown() {
     if (cats.includes(prev)) sel.value = prev;
 }
 
-// ── Build dropdown Thương Hiệu theo danh mục đang chọn ───────────────
 function buildGapBrandDropdown(selectedCat) {
     const sel = document.getElementById('gap-brand-filter');
     if (!sel) return;
@@ -106,7 +126,6 @@ async function fetchStockGap() {
         const lastUpdateEl = document.getElementById('last-update');
         if (lastUpdateEl) lastUpdateEl.textContent = `${allGapData.length} sản phẩm cần nhập thêm`;
 
-        // Build dropdowns động từ dữ liệu thực
         buildGapCategoryDropdown();
         buildGapBrandDropdown('');
 
@@ -130,7 +149,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     fetchStockGap();
 
-    // Đổi danh mục → refresh thương hiệu → lọc lại
     document.getElementById('gap-category-filter').addEventListener('change', () => {
         buildGapBrandDropdown(document.getElementById('gap-category-filter').value);
         applyGapFilters();
