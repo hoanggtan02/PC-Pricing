@@ -145,11 +145,15 @@ def parse_xml_file(filepath: Path) -> list[dict]:
                 continue
                 
             # Đọc các tag g:
+            id_el = item.find('g:id', namespaces)
             price_el = item.find('g:price', namespaces)
             sale_price_el = item.find('g:sale_price', namespaces)
             brand_el = item.find('g:brand', namespaces)
             availability_el = item.find('g:availability', namespaces)
             product_type_el = item.find('g:product_type', namespaces)
+            
+            id_str = id_el.text.strip() if id_el is not None else ""
+            shop_sku = id_str.split('-')[0] if id_str else None
             
             price_str = price_el.text.strip() if price_el is not None else ""
             sale_price_str = sale_price_el.text.strip() if sale_price_el is not None else ""
@@ -170,7 +174,8 @@ def parse_xml_file(filepath: Path) -> list[dict]:
                 "brand": brand,
                 "in_stock": in_stock,
                 "product_type": product_type,
-                "file_name": filename
+                "file_name": filename,
+                "shop_sku": shop_sku
             })
             
     except Exception as e:
@@ -239,7 +244,8 @@ def main():
             "sku": sku,
             "name": item["title"],
             "brand": item["brand"],
-            "category": cat
+            "category": cat,
+            "shop_sku": item["shop_sku"]
         })
         
         sources_to_upsert.append({
