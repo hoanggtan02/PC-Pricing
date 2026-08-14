@@ -33,7 +33,8 @@ SELECTORS = {
     "CellphoneS": [".product__price--show", ".sale-price", "[itemprop='price']"],
     "GearVN": [".product-price", ".pro-price", ".price-current"],
     "Thành Nhân": [".new-price", ".deal-price-value", ".product-price"],
-    "An Phát PC": [".p-price", ".d-pro-price", ".price-current"],
+    # `data-price` của .js-pro-total-price là giá khuyến mại cuối cùng, không phải giá <del>.
+    "An Phát PC": [".js-pro-total-price", ".p-price", ".d-pro-price", ".price-current"],
     "Phong Vũ": [".css-1755xpx", ".product-price", ".price-current", "span[class*='price']"],
     "Hà Nội Computer": [".dpro-p-price", ".price-current", ".product-price"],
     "Memoryzone": [".product-price", ".price-current"],
@@ -113,6 +114,11 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
                 for i in range(await locator.count()):
                     el = locator.nth(i)
                     if await el.is_visible():
+                        # Ví dụ An Phát: <b class="js-pro-total-price" data-price="34990000">.
+                        raw_price = await el.get_attribute("data-price")
+                        p = clean_price(raw_price or "")
+                        if p and p > 1000:
+                            return p
                         txt = await el.inner_text()
                         p = clean_price(txt)
                         if p and p > 1000:
