@@ -60,6 +60,10 @@ BRANDS = {
         "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=laptop+msi"
         "&sort=noi-bat&categories=may-tinh-xach-tay&page={page}"
     ),
+    "gigabyte": (
+        "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=laptop+gigabyte"
+        "&sort=noi-bat&categories=may-tinh-xach-tay&page={page}"
+    ),
 }
 PAGE_CAP = 50  # chốt an toàn; phân trang tự dừng sớm khi trang không thêm sản phẩm. Chạm cap = cảnh báo.
 

@@ -52,17 +52,24 @@ jobs:
           # $TIMINGS để cuối bước in BẢNG XẾP HẠNG shop×pass tốn thời gian nhất. Không đổi hành vi
           # scrape (vẫn `|| true` để một scraper hỏng không làm đỏ cả bước). ──
           TIMINGS="$RUNNER_TEMP/timings.tsv"; : > "$TIMINGS"
+          FAILURES="$RUNNER_TEMP/failures.tsv"; : > "$FAILURES"
           run_timed() {              # $1=shop  $2=pass(brand/cat)  $3..=command
             local shop="$1" pass="$2"; shift 2
             local start=$SECONDS
-            "$@" || true
+            local status="OK"
+            if ! "$@"; then
+              status="FAILED"
+              printf '%s\t%s\n' "$shop" "$pass" >> "$FAILURES"
+            fi
             local dur=$(( SECONDS - start ))
             printf '⏱ TIMING\t%s\t%s\t%ss\n' "$shop" "$pass" "$dur"
             printf '%s\t%s\t%s\n' "$dur" "$shop" "$pass" >> "$TIMINGS"
           }
 
           # ── Laptop: one pass per brand (TNC first defines the catalog, then competitors). ──
-          for brand in dell lenovo apple hp asus acer msi; do
+          # Giữ category-first; Gigabyte đã có URL riêng ở tất cả discoverer nhưng trước đây
+          # bị bỏ khỏi vòng workflow nên toàn bộ laptop Gigabyte không bao giờ được discovery.
+          for brand in dell lenovo apple hp asus acer msi gigabyte; do
             echo "::group::Laptop $brand"
             for shop in tnc anphat cellphones hacom phongvu fptshop tgdd gearvn memoryzone; do
               run_timed "$shop" "laptop/$brand" python -m "scraper.discover_$shop" --brand "$brand"
@@ -98,6 +105,16 @@ jobs:
       # latest_prices_cache là ẢNH CHỤP — phải refresh sau khi scrape để dashboard thấy giá mới. Bước
       # RIÊNG, KHÔNG có `|| true`: nếu refresh lỗi → CI ĐỎ (có email). Refresh im lặng thất bại là ca
       # tệ nhất (dữ liệu mới trong DB nhưng dashboard hiện cũ), nên phải để nó báo lỗi rõ ràng.
+      - name: Report failed discovery passes
+        if: always()
+        run: |
+          if [ -s "$RUNNER_TEMP/failures.tsv" ]; then
+            echo "Discovery passes that failed:"
+            awk -F'\t' '{print "- " $1 " / " $2}' "$RUNNER_TEMP/failures.tsv" | sort -u
+          else
+            echo "All discovery passes completed successfully."
+          fi
+
       - name: Refresh latest_prices cache
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
