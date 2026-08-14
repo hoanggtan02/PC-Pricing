@@ -21,6 +21,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from .config import is_old_listing_name
 from .db import deactivate_source, get_client, insert_price, fetch_active_sources
+from .proxy_pool import get_pool, is_proxy_error
 
 CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa
 USER_AGENT = (
@@ -181,7 +182,9 @@ async def _wait_price_rendered(page: Page, competitor: str, timeout: int) -> Non
         pass
 
 
-async def scrape_source(context, source: dict, dry_run: bool, client) -> bool:
+async def scrape_source(context, source: dict, dry_run: bool, client, proxy: dict | None = None) -> bool:
+    """Trả về True nếu lấy được giá. `proxy` (nếu có) là proxy hiện tại của `context`, dùng để
+    biết nên mark_dead khi lỗi là lỗi PROXY (xem is_proxy_error) chứ không phải lỗi trang đích."""
     competitor = source["competitor"]
     url = source["url"]
     sku = source["product_sku"]
@@ -246,13 +249,35 @@ async def scrape_source(context, source: dict, dry_run: bool, client) -> bool:
         ))
         label = "HẠ TẦNG/MẠNG" if infra else "PARSE"
         print(f"  ❌ {competitor} - {sku}: Lỗi cào [{label}] ({msg})")
+        # Lỗi PROXY thật (hết hạn/sập) -> đánh dấu chết trong pool. worker() sẽ phát hiện qua
+        # pool.current() đổi khác context["proxy_obj"] hiện tại và tự REBUILD context proxy mới
+        # cho các source proxy TIẾP THEO trong hàng đợi — không cần dừng cả job để đổi tay.
+        if proxy is not None and is_proxy_error(msg):
+            get_pool().mark_dead(proxy)
         return False
     finally:
         await page.close()
 
-async def worker(queue, contexts, dry_run, client, results):
-    """contexts = {"direct": <context>, "proxy": <context | None>}. Mỗi source được định tuyến tới
-    context đúng theo PROXY_COMPETITORS — KHÔNG ép mọi site qua cùng một context proxy."""
+async def _build_proxy_context(browser, proxy: dict | None):
+    """Tạo context mới ứng với `proxy` hiện tại (proxy=None -> context không proxy)."""
+    kwargs = {"user_agent": USER_AGENT, "viewport": {"width": 1280, "height": 800}}
+    if proxy:
+        kwargs["proxy"] = proxy
+    return await browser.new_context(**kwargs)
+
+
+async def worker(queue, browser, contexts: dict, dry_run, client, results):
+    """contexts = {"direct": <context>, "proxy": <context|None>, "proxy_obj": <dict|None>}.
+    Mỗi source được định tuyến tới context đúng theo PROXY_COMPETITORS — KHÔNG ép mọi site qua
+    cùng một context proxy.
+
+    Trước MỖI source cần proxy, worker kiểm tra pool.current() có còn KHỚP với proxy đang gắn
+    trong contexts["proxy_obj"] không. Nếu một worker khác vừa mark_dead() proxy đó (do lỗi ở
+    source trước), current() trả về proxy KHÁC — worker này tự đóng context cũ, mở context mới
+    với proxy còn sống, rồi mới cào tiếp. Nhờ vậy một proxy hết hạn GIỮA lượt chạy không làm chết
+    toàn bộ các source Phong Vũ/FPT Shop/TGĐĐ còn lại trong hàng đợi.
+    """
+    pool = get_pool()
     while True:
         source = await queue.get()
         if source is None:
@@ -261,19 +286,37 @@ async def worker(queue, contexts, dry_run, client, results):
 
         competitor = source["competitor"]
         needs_proxy = competitor in PROXY_COMPETITORS
-        context = contexts["proxy"] if needs_proxy else contexts["direct"]
 
-        if needs_proxy and context is None:
-            # Site geo-block nhưng KHÔNG có proxy cấu hình — không giả vờ gọi trực tiếp (sẽ luôn
-            # 403), báo rõ lý do rồi bỏ qua, thay vì âm thầm tính là "lỗi parse".
-            print(f"  ⚠️  Skip {competitor} - {source['product_sku']}: cần proxy VN nhưng "
-                  f"PROXY_SERVER chưa cấu hình.")
-            results["failed"] += 1
-            results["by_competitor"][competitor]["failed"] += 1
-            queue.task_done()
-            continue
+        if needs_proxy:
+            live_proxy = pool.current()
+            if live_proxy is None:
+                print(f"  ⚠️  Skip {competitor} - {source['product_sku']}: hết proxy sống trong "
+                      f"pool ({pool.status()}).")
+                results["failed"] += 1
+                results["by_competitor"][competitor]["failed"] += 1
+                queue.task_done()
+                continue
+            # Proxy hiện tại của contexts đã đổi khác proxy sống mới nhất -> rebuild context.
+            if contexts.get("proxy_obj") != live_proxy:
+                old_ctx = contexts.get("proxy")
+                async with contexts["lock"]:
+                    # double-check trong lock: có thể worker khác đã rebuild rồi.
+                    if contexts.get("proxy_obj") != live_proxy:
+                        contexts["proxy"] = await _build_proxy_context(browser, live_proxy)
+                        contexts["proxy_obj"] = live_proxy
+                        print(f"  🔄 Đổi sang proxy: {live_proxy['server']} ({pool.status()})")
+                        if old_ctx is not None:
+                            try:
+                                await old_ctx.close()
+                            except Exception:
+                                pass
+            context = contexts["proxy"]
+            proxy_for_mark = contexts["proxy_obj"]
+        else:
+            context = contexts["direct"]
+            proxy_for_mark = None
 
-        success = await scrape_source(context, source, dry_run, client)
+        success = await scrape_source(context, source, dry_run, client, proxy=proxy_for_mark)
         results["success" if success else "failed"] += 1
         results["by_competitor"][source["competitor"]]["success" if success else "failed"] += 1
         queue.task_done()
@@ -295,23 +338,12 @@ async def run_sync(dry_run: bool, limit: int | None = None):
         f"{competitor}={count}" for competitor, count in sorted(totals.items())
     ))
     proxy_needed = sorted(c for c in totals if c in PROXY_COMPETITORS)
+    pool = get_pool()
     if proxy_needed:
-        print(f"Cửa hàng cần proxy VN: {', '.join(proxy_needed)}")
+        print(f"Cửa hàng cần proxy VN: {', '.join(proxy_needed)} — {pool.status()}")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-
-        # Proxy Việt Nam (nếu có cấu hình) — CHỈ dùng cho các site geo-block (PROXY_COMPETITORS).
-        proxy_server = os.environ.get("PROXY_SERVER")
-        proxy_username = os.environ.get("PROXY_USERNAME")
-        proxy_password = os.environ.get("PROXY_PASSWORD")
-
-        proxy_cfg = None
-        if proxy_server:
-            proxy_cfg = {"server": proxy_server}
-            if proxy_username:
-                proxy_cfg["username"] = proxy_username
-                proxy_cfg["password"] = proxy_password
 
         # Context KHÔNG proxy — dùng cho An Phát, CellphoneS, HACOM, Thành Nhân, GearVN, Memoryzone.
         # Đây là context MẶC ĐỊNH cho gần hết source, nên proxy hỏng sẽ KHÔNG còn ảnh hưởng tới chúng.
@@ -321,21 +353,19 @@ async def run_sync(dry_run: bool, limit: int | None = None):
         )
 
         # Context CÓ proxy — chỉ tạo khi thực sự có site cần proxy trong lượt chạy này, và chỉ khi
-        # proxy đã được cấu hình. Nếu cần mà thiếu cấu hình, các source đó sẽ bị skip có cảnh báo
+        # pool có proxy sống. Nếu cần mà pool rỗng/chết hết, các source đó sẽ bị skip có cảnh báo
         # rõ ràng ở worker() thay vì đi thẳng vào context_direct và luôn 403.
-        context_proxy = None
+        # contexts["lock"] bảo vệ việc REBUILD context proxy khi nhiều worker cùng phát hiện proxy
+        # chết gần như đồng thời — chỉ một worker được rebuild, các worker khác chờ rồi dùng lại.
+        contexts = {"direct": context_direct, "proxy": None, "proxy_obj": None, "lock": asyncio.Lock()}
         if proxy_needed:
-            if proxy_cfg:
-                context_proxy = await browser.new_context(
-                    user_agent=USER_AGENT,
-                    viewport={"width": 1280, "height": 800},
-                    proxy=proxy_cfg,
-                )
+            live_proxy = pool.current()
+            if live_proxy:
+                contexts["proxy"] = await _build_proxy_context(browser, live_proxy)
+                contexts["proxy_obj"] = live_proxy
             else:
-                print("  ⚠️  Có source cần proxy VN nhưng PROXY_SERVER chưa được set trong môi trường "
-                      "— các source đó sẽ bị bỏ qua (xem cảnh báo bên dưới).")
-
-        contexts = {"direct": context_direct, "proxy": context_proxy}
+                print("  ⚠️  Có source cần proxy VN nhưng không có proxy sống trong PROXY_LIST/"
+                      "PROXY_SERVER — các source đó sẽ bị bỏ qua (xem cảnh báo bên dưới).")
 
         queue = asyncio.Queue()
         for src in sources:
@@ -352,7 +382,7 @@ async def run_sync(dry_run: bool, limit: int | None = None):
         # Tạo worker tasks chạy song song
         tasks = []
         for _ in range(CONCURRENCY_LIMIT):
-            task = asyncio.create_task(worker(queue, contexts, dry_run, client, results))
+            task = asyncio.create_task(worker(queue, browser, contexts, dry_run, client, results))
             tasks.append(task)
             # Thêm tín hiệu dừng cho mỗi worker
             await queue.put(None)
@@ -360,7 +390,9 @@ async def run_sync(dry_run: bool, limit: int | None = None):
         await queue.join()
         await asyncio.gather(*tasks)
         await browser.close()
-        
+
+    if proxy_needed:
+        print(f"Trạng thái proxy cuối lượt chạy: {pool.status()}")
     print(f"\nHoàn tất đồng bộ giá: Thành công {results['success']}, Thất bại {results['failed']}.")
     print("Kết quả theo cửa hàng:")
     for competitor in sorted(results["by_competitor"]):
