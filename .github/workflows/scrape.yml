@@ -1,45 +1,115 @@
 name: Weekend price discover (Mode A - Discovery)
 # ─────────────────────────────────────────────────────────────────────────────
 # Mode A: Khám phá sản phẩm mới bằng cách tìm kiếm trên các trang đối thủ.
-# Chỉ chạy CUỐI TUẦN (Thứ 7 & CN) do tốn thời gian và tài nguyên (~5-6h).
+# Chỉ chạy CUỐI TUẦN (Thứ 7 & CN) do tốn thời gian và tài nguyên.
 # KHÔNG ghi đè URL đã sửa tay (is_manual_url=true) — được bảo vệ trong db.py.
 # Mode B (hàng ngày) xem: .github/workflows/sync.yml
+#
+# GITHUB-HOSTED RUNNER GIỚI HẠN CỨNG 6 GIỜ / JOB (không thể xin thêm bằng timeout-minutes).
+# Trước đây TOÀN BỘ 8 brand laptop × 9 shop + ~22 category × 9 shop chạy TUẦN TỰ trong MỘT job
+# → luôn > 6h khi danh mục tăng lên, bị GitHub kill giữa chừng (mất dữ liệu của các pass chưa
+# kịp chạy, không có log rõ ràng vì sao dừng).
+#
+# Sửa: tách thành NHIỀU job matrix chạy SONG SONG — mỗi job (`scrape`) chỉ lo MỘT brand laptop
+# HOẶC MỘT category (vẫn lặp qua đủ 9 shop bên trong, giữ nguyên thứ tự TNC chạy TRƯỚC — bắt buộc
+# vì catalog phải có SKU trước khi đối thủ khớp giá). Mỗi leg nhỏ như vậy chắc chắn xong dưới 6h.
+# `prepare` build danh sách leg từ config (tự động thêm/bớt khi sources.yaml đổi, không cần sửa
+# YAML tay). `summary` gom log thời gian + lỗi từ tất cả leg lại thành MỘT bảng tổng kết như cũ.
+# `refresh` chạy MỘT LẦN DUY NHẤT sau khi mọi leg xong.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
   schedule:
-    # Chỉ chạy cuối tuần để tiết kiệm tài nguyên; Mode B (sync.yml) lo việc hàng ngày.
-    - cron: "30 18 * * 5"   # Thứ 6 18:30 UTC = Thứ 7 01:30 VN → xong ~07:30 VN
-    - cron: "30 18 * * 6"   # Thứ 7 18:30 UTC = CN 01:30 VN → xong ~07:30 VN
+    - cron: "30 18 * * 5"   # Thứ 6 18:30 UTC = Thứ 7 01:30 VN
+    - cron: "30 18 * * 6"   # Thứ 7 18:30 UTC = CN 01:30 VN
   workflow_dispatch:  # Cho phép chạy tay từ tab Actions
 
-# Chỉ MỘT lần chạy tại một thời điểm. cancel-in-progress: false = không huỷ
-# lần đang chạy giữa chừng (không để lại dữ liệu dở dang).
+# Chỉ MỘT LƯỢT CHẠY WORKFLOW tại một thời điểm (tránh Thứ 7 và CN đè lên nhau). KHÔNG giới hạn
+# các job/matrix leg chạy song song BÊN TRONG một lượt chạy — đó là mục tiêu của thay đổi này.
 concurrency:
   group: daily-price-scrape
   cancel-in-progress: false
 
 jobs:
-  scrape:
+  # ── Bước 0: dựng danh sách các "leg" cần cào (8 brand laptop + N category đang enabled trong
+  # sources.yaml), rồi đưa qua job `scrape` dưới dạng matrix động (fromJson). Nhẹ, không cần
+  # Playwright — chỉ cần đọc config.
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
     defaults:
       run:
         working-directory: scraper
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Build discovery matrix (laptop brands + categories)
+        id: build
+        run: |
+          MATRIX=$(python - <<'PY'
+          import json
+          from scraper.config import categories
+
+          BRANDS = ["dell", "lenovo", "apple", "hp", "asus", "acer", "msi", "gigabyte"]
+          entries = [
+              {"id": f"laptop-{b}", "kind": "laptop", "brand": b, "label": f"laptop/{b}"}
+              for b in BRANDS
+          ]
+          entries += [
+              {"id": c, "kind": "category", "category": c, "label": c}
+              for c in sorted(categories())
+          ]
+          print(json.dumps({"include": entries}, separators=(",", ":")))
+          PY
+          )
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Tổng số leg: $(echo "$MATRIX" | python -c 'import json,sys; print(len(json.load(sys.stdin)["include"]))')"
+
+  # ── Mỗi leg = một brand laptop HOẶC một category, lặp qua đủ 9 shop (TNC trước). Chạy SONG
+  # SONG (bounded bởi max-parallel) — mỗi leg chỉ mất một phần nhỏ thời gian job cũ nên chắc
+  # chắn dưới trần 6h. fail-fast:false để một leg lỗi không huỷ các leg khác.
+  scrape:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Giới hạn số leg chạy song song: quá cao dễ dồn nhiều IP runner cùng lúc gõ vào MỘT shop
+      # (rủi ro bị site chặn/rate-limit — xem bài học An Phát ở sync_prices.py), quá thấp thì mất
+      # lợi ích song song. Chỉnh số này nếu cần (không ảnh hưởng đúng/sai, chỉ ảnh hưởng tốc độ).
+      max-parallel: 10
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    # Chốt an toàn THẤP HƠN trần cứng 360' của GitHub-hosted runner — nếu một leg treo, nó bị
+    # timeout với thông báo RÕ RÀNG thay vì bị GitHub âm thầm kill đúng lúc 360'.
+    timeout-minutes: 340
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Cache trình duyệt Chromium của Playwright — với ~30 leg chạy song song, mỗi leg tự tải lại
+      # chromium sẽ tốn băng thông/thời gian lặp lại vô ích. Cache theo hash requirements.txt.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('scraper/requirements.txt') }}
 
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
 
-      - name: Run scrapers
+      - name: Discover (${{ matrix.label }})
         # Secrets configured in Settings → Secrets and variables → Actions:
-        #   SUPABASE_URL, SUPABASE_KEY (service_role), PROXY_SERVER/USERNAME/PASSWORD
+        #   SUPABASE_URL, SUPABASE_KEY (service_role), PROXY_LIST/PROXY_SERVER/USERNAME/PASSWORD
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
@@ -48,76 +118,115 @@ jobs:
           PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
         run: |
-          # ── Đo thời gian: mỗi lần gọi scraper được bọc bởi run_timed để ghi lại wall-clock. Dòng
-          # "⏱ TIMING <shop> <pass> <giây>" in ngay tại chỗ (grep được trong log), đồng thời ghi vào
-          # $TIMINGS để cuối bước in BẢNG XẾP HẠNG shop×pass tốn thời gian nhất. Không đổi hành vi
-          # scrape (vẫn `|| true` để một scraper hỏng không làm đỏ cả bước). ──
-          TIMINGS="$RUNNER_TEMP/timings.tsv"; : > "$TIMINGS"
-          FAILURES="$RUNNER_TEMP/failures.tsv"; : > "$FAILURES"
-          run_timed() {              # $1=shop  $2=pass(brand/cat)  $3..=command
-            local shop="$1" pass="$2"; shift 2
-            local start=$SECONDS
-            local status="OK"
-            if ! "$@"; then
-              status="FAILED"
-              printf '%s\t%s\n' "$shop" "$pass" >> "$FAILURES"
+          # set -uo pipefail (KHÔNG -e): một scraper hỏng ghi vào failures.tsv nhưng KHÔNG làm
+          # dừng cả leg — giữ đúng hành vi cũ (`run_timed ... || true`).
+          set -uo pipefail
+          TIMINGS="$RUNNER_TEMP/timings-${{ matrix.id }}.tsv"; : > "$TIMINGS"
+          FAILURES="$RUNNER_TEMP/failures-${{ matrix.id }}.tsv"; : > "$FAILURES"
+
+          # TNC LUÔN chạy trước trong danh sách này — bắt buộc, vì TNC là nguồn định nghĩa
+          # catalog (products); các shop sau khớp giá dựa trên SKU mà TNC vừa ghi.
+          for shop in tnc anphat cellphones hacom phongvu fptshop tgdd gearvn memoryzone; do
+            if [ "${{ matrix.kind }}" = "laptop" ]; then
+              cmd=(python -m "scraper.discover_$shop" --brand "${{ matrix.brand }}")
+            else
+              cmd=(python -m "scraper.discover_$shop" --category "${{ matrix.category }}")
             fi
-            local dur=$(( SECONDS - start ))
-            printf '⏱ TIMING\t%s\t%s\t%ss\n' "$shop" "$pass" "$dur"
-            printf '%s\t%s\t%s\n' "$dur" "$shop" "$pass" >> "$TIMINGS"
-          }
-
-          # ── Laptop: one pass per brand (TNC first defines the catalog, then competitors). ──
-          # Giữ category-first; Gigabyte đã có URL riêng ở tất cả discoverer nhưng trước đây
-          # bị bỏ khỏi vòng workflow nên toàn bộ laptop Gigabyte không bao giờ được discovery.
-          for brand in dell lenovo apple hp asus acer msi gigabyte; do
-            echo "::group::Laptop $brand"
-            for shop in tnc anphat cellphones hacom phongvu fptshop tgdd gearvn memoryzone; do
-              run_timed "$shop" "laptop/$brand" python -m "scraper.discover_$shop" --brand "$brand"
-            done
+            echo "::group::$shop / ${{ matrix.label }}"
+            start=$SECONDS
+            if ! "${cmd[@]}"; then
+              printf '%s\t%s\n' "$shop" "${{ matrix.label }}" >> "$FAILURES"
+            fi
+            dur=$(( SECONDS - start ))
+            printf '⏱ TIMING\t%s\t%s\t%ss\n' "$shop" "${{ matrix.label }}" "$dur"
+            printf '%s\t%s\t%s\n' "$dur" "$shop" "${{ matrix.label }}" >> "$TIMINGS"
             echo "::endgroup::"
           done
 
-          # ── Other categories: one pass each (TNC first, then competitors). The category LIST is
-          # read from config (enabled-only) so toggling `enabled: false` in sources.yaml removes a
-          # category from CI with no workflow edit. ──
-          CATS=$(python -c "from scraper.config import categories; print(' '.join(sorted(categories())))")
-          echo "Enabled categories: $CATS"
-          for cat in $CATS; do
-            echo "::group::Category $cat"
-            for shop in tnc anphat cellphones hacom phongvu fptshop tgdd gearvn memoryzone; do
-              run_timed "$shop" "$cat" python -m "scraper.discover_$shop" --category "$cat"
-            done
-            echo "::endgroup::"
-          done
+      # Upload dù leg lỗi/timeout — summary job cần dữ liệu này để tổng hợp. File trống (không
+      # lỗi) vẫn được upload bình thường (chỉ thiếu khi cả leg crash trước khi tạo file, hiếm).
+      - name: Upload timing data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timings-${{ matrix.id }}
+          path: ${{ runner.temp }}/timings-${{ matrix.id }}.tsv
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Upload failure data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failures-${{ matrix.id }}
+          path: ${{ runner.temp }}/failures-${{ matrix.id }}.tsv
+          if-no-files-found: ignore
+          retention-days: 3
 
-          # ── Bảng xếp hạng: 25 lần gọi tốn thời gian nhất + tổng thời gian theo shop. Grep "TIMING
-          # SUMMARY" trong log để đọc nhanh phần nào ngốn giờ. ──
-          echo "::group::⏱ TIMING SUMMARY"
+  # ── Gom timing + failure của TẤT CẢ leg lại thành MỘT bảng, thay cho bảng xếp hạng cũ vốn chỉ
+  # tính trong phạm vi một job duy nhất. Chạy dù có leg fail (if: always()).
+  summary:
+    needs: scrape
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all timing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "timings-*"
+          path: /tmp/timings
+          merge-multiple: true
+      - name: Download all failure artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "failures-*"
+          path: /tmp/failures
+          merge-multiple: true
+      - name: Print timing + failure summary
+        run: |
+          echo "::group::⏱ TIMING SUMMARY (toàn bộ ma trận)"
+          ALL=/tmp/all_timings.tsv
+          cat /tmp/timings/*.tsv > "$ALL" 2>/dev/null || : > "$ALL"
           echo "== Top 25 chậm nhất (giây  shop  pass) =="
-          sort -rn "$TIMINGS" | head -25 | awk -F'\t' '{printf "%6ss  %-12s %s\n",$1,$2,$3}'
+          sort -rn "$ALL" | head -25 | awk -F'\t' '{printf "%6ss  %-16s %s\n",$1,$2,$3}'
           echo "== Tổng theo shop (giây) =="
-          awk -F'\t' '{s[$2]+=$1} END{for(k in s) print s[k]"\t"k}' "$TIMINGS" \
+          awk -F'\t' '{s[$2]+=$1} END{for(k in s) print s[k]"\t"k}' "$ALL" \
             | sort -rn | awk -F'\t' '{printf "%6ss  %s\n",$1,$2}'
-          echo "== Tổng toàn bộ =="
-          awk -F'\t' '{s+=$1} END{printf "%ss (%.1f phút)\n",s,s/60}' "$TIMINGS"
+          echo "== Tổng cộng dồn thời gian THỰC THI (song song nên < wall-clock thật) =="
+          awk -F'\t' '{s+=$1} END{printf "%ss (%.1f phút)\n",s,s/60}' "$ALL"
           echo "::endgroup::"
 
-      # latest_prices_cache là ẢNH CHỤP — phải refresh sau khi scrape để dashboard thấy giá mới. Bước
-      # RIÊNG, KHÔNG có `|| true`: nếu refresh lỗi → CI ĐỎ (có email). Refresh im lặng thất bại là ca
-      # tệ nhất (dữ liệu mới trong DB nhưng dashboard hiện cũ), nên phải để nó báo lỗi rõ ràng.
-      - name: Report failed discovery passes
-        if: always()
-        run: |
-          if [ -s "$RUNNER_TEMP/failures.tsv" ]; then
-            echo "Discovery passes that failed:"
-            awk -F'\t' '{print "- " $1 " / " $2}' "$RUNNER_TEMP/failures.tsv" | sort -u
+          echo "::group::❌ Discovery passes thất bại"
+          ALLF=/tmp/all_failures.tsv
+          cat /tmp/failures/*.tsv > "$ALLF" 2>/dev/null || : > "$ALLF"
+          if [ -s "$ALLF" ]; then
+            awk -F'\t' '{print "- " $1 " / " $2}' "$ALLF" | sort -u
           else
-            echo "All discovery passes completed successfully."
+            echo "Không có lỗi nào."
           fi
+          echo "::endgroup::"
 
+  # ── latest_prices_cache là ẢNH CHỤP — phải refresh sau khi TẤT CẢ leg scrape xong. Chạy MỘT
+  # LẦN DUY NHẤT ở đây (không phải mỗi leg tự refresh — vừa thừa vừa dễ đụng race). if: always()
+  # để refresh cả khi chỉ có source bị tắt vì hàng cũ/demo (không có giá mới ở leg nào thành
+  # công) — nếu chỉ refresh khi có leg success, giá cũ vẫn kẹt trong snapshot.
+  refresh:
+    needs: scrape
+    if: always()
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies (chỉ cần supabase client, không cần Playwright)
+        run: pip install -r requirements.txt
       - name: Refresh latest_prices cache
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        # KHÔNG `|| true`: nếu refresh lỗi → CI ĐỎ (có email). Refresh im lặng thất bại là ca tệ
+        # nhất (dữ liệu mới trong DB nhưng dashboard hiện cũ), nên phải để nó báo lỗi rõ ràng.
         run: python -m scraper.refresh_views
