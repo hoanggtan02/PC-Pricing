@@ -1182,6 +1182,11 @@ _CATEGORY_SKU = {
 }
 
 
+_USED_RE = re.compile(
+    r"(?i)\b(tray|demo|cũ|cu|like|nhập\s+khẩu|nhap\s+khau|xách\s+tay|xach\s+tay|usa|xước|xuoc|cấn|can)\b"
+)
+
+
 def derive_sku(name: str | None, url: str | None, category: str = "Laptop") -> str | None:
     """Canonical SKU for a discovered product — the same product yields the same key across stores.
 
@@ -1190,7 +1195,11 @@ def derive_sku(name: str | None, url: str | None, category: str = "Laptop") -> s
     when it can't extract an identity, so the caller ingests it TNC-only / skips the match.
     See docs/sku-matching.md.
     """
+    if name and _USED_RE.search(name):
+        return None
+
     if category != "Laptop":
+
         fn = _CATEGORY_SKU.get(category.lower())
         return fn(name) if fn else None
     return _laptop_sku(name, url)

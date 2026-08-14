@@ -179,7 +179,7 @@ categories:
 
   # ── Phụ kiện linh-phu-kien (Tier A: bàn phím/chuột/webcam/USB/box đều có mã model in giống nhau) ──
   keyboard:
-    enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
+    # enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
     tier: A
     search_term: "bàn phím"
     name_match: "bàn phím|ban phim|keyboard"
@@ -191,7 +191,7 @@ categories:
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=ban+phim&categories=ban-phim&page={page}"
 
   mouse:
-    enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
+    # enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
     tier: A
     search_term: "chuột máy tính"
     name_match: "chuột|chuot|\\bmouse\\b"
