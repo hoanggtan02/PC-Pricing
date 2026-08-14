@@ -182,6 +182,11 @@ async def _wait_price_rendered(page: Page, competitor: str, timeout: int) -> Non
         pass
 
 
+# Các competitor "nặng" (tracker/JS chạy lâu, hoặc dễ bị dồn tải khi nhiều worker cào song song)
+# cần thêm thời gian chờ render + thêm lượt đọc lại so với mặc định. Xem ghi chú ở scrape_source().
+SLOW_COMPETITORS = {"An Phát PC"}
+
+
 async def scrape_source(context, source: dict, dry_run: bool, client, proxy: dict | None = None) -> bool:
     """Trả về True nếu lấy được giá. `proxy` (nếu có) là proxy hiện tại của `context`, dùng để
     biết nên mark_dead khi lỗi là lỗi PROXY (xem is_proxy_error) chứ không phải lỗi trang đích."""
@@ -203,7 +208,11 @@ async def scrape_source(context, source: dict, dry_run: bool, client, proxy: dic
         await page.goto(url, wait_until="commit", timeout=30000)
 
         # Chờ ĐÚNG theo tín hiệu khối giá đã render (không phải chờ cố định) — xem _wait_price_rendered.
-        await _wait_price_rendered(page, competitor, timeout=10000)
+        # Site "nặng" (SLOW_COMPETITORS) được cấp thêm thời gian: khi CI chạy 5 tab song song, các
+        # site có tracker nặng/dễ bị dồn tải cần lâu hơn để JS render xong giá so với chạy đơn lẻ
+        # trên máy local.
+        is_slow = competitor in SLOW_COMPETITORS
+        await _wait_price_rendered(page, competitor, timeout=20000 if is_slow else 10000)
         
         # Một URL có thể bị shop đổi sang hàng cũ/demo sau khi đã ghép SKU.
         # Không ghi giá đó và tắt source để cache lần refresh sau loại nó.
@@ -222,8 +231,13 @@ async def scrape_source(context, source: dict, dry_run: bool, client, proxy: dic
         # goto lại): một số site geo/tracker-heavy (An Phát) không bao giờ đạt 'load'/'networkidle'
         # ổn định — reload ở đây từng làm mỗi lần retry tốn hẳn 30s timeout thật, nghẽn cả 5 tab song
         # song và làm kết quả TỆ HƠN. Chỉ đợi thêm một nhịp ngắn rồi đọc lại là đủ trong đa số case.
-        if not price:
-            await page.wait_for_timeout(1200)
+        # Site "nặng" được thêm vài lượt đọc lại (thay vì chỉ 1) vì JS của nó cần nhiều thời gian
+        # hơn để điền giá vào DOM khi bị dồn tải trên CI.
+        extra_reads = 3 if is_slow else 1
+        for _ in range(extra_reads):
+            if price:
+                break
+            await page.wait_for_timeout(1500 if is_slow else 1200)
             price = await extract_price_generic(page, competitor)
 
         if price:
@@ -321,6 +335,36 @@ async def worker(queue, browser, contexts: dict, dry_run, client, results):
         results["by_competitor"][source["competitor"]]["success" if success else "failed"] += 1
         queue.task_done()
 
+
+def _interleave_by_competitor(sources: list[dict]) -> list[dict]:
+    """Trộn xen kẽ (round-robin) danh sách source theo competitor.
+
+    fetch_active_sources() (db.py) trả về sources ĐÃ SẮP XẾP theo competitor (.order("competitor")).
+    Nếu đẩy thẳng thứ tự đó vào queue, CONCURRENCY_LIMIT=5 worker chạy song song sẽ thường xuyên
+    CÙNG LÚC cào MỘT competitor duy nhất suốt một đoạn dài của hàng đợi (đúng như log lỗi thực tế:
+    hàng loạt "Đang cào An Phát PC..." chạy chồng lên nhau). 5 request đồng thời từ CÙNG một IP
+    (runner CI) dồn vào CÙNG một site nặng-tracker rất dễ khiến trang chưa kịp render JS trong cửa
+    sổ chờ, hoặc bị site soi/giới hạn tốc độ theo IP — ra đúng triệu chứng "Không tìm thấy giá trên
+    trang" hàng loạt dù URL hoàn toàn hợp lệ.
+
+    Xen kẽ round-robin rải request ra nhiều competitor khác nhau, để 5 worker song song hiếm khi
+    cùng nhắm vào một site cùng lúc. KHÔNG đổi tổng số source hay nội dung — chỉ đổi THỨ TỰ.
+    """
+    from collections import defaultdict, deque
+
+    buckets: dict[str, deque] = defaultdict(deque)
+    for s in sources:
+        buckets[s["competitor"]].append(s)
+    order = list(buckets.keys())
+    out: list[dict] = []
+    while order:
+        for c in list(order):
+            out.append(buckets[c].popleft())
+            if not buckets[c]:
+                order.remove(c)
+    return out
+
+
 async def run_sync(dry_run: bool, limit: int | None = None):
     client = get_client()
     # Lấy các source đang active
@@ -328,6 +372,10 @@ async def run_sync(dry_run: bool, limit: int | None = None):
     if not sources:
         print("Không tìm thấy source active nào trong Database.")
         return
+
+    # Xen kẽ theo competitor TRƯỚC khi cắt --limit, để cả khi limit nhỏ vẫn thấy nhiều shop
+    # (hữu ích lúc test), và để CONCURRENCY_LIMIT worker không dồn hết vào một competitor.
+    sources = _interleave_by_competitor(sources)
 
     if limit:
         sources = sources[:limit]
