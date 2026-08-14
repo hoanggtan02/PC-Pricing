@@ -57,12 +57,12 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     danh mục: tìm cả danh mục, giữ mọi card sản phẩm, lọc theo name_match ở Python.
     """
     is_laptop = category == "laptop"
+    excl_re = name_exclude_re(category)
     if is_laptop:
         search_url, name_re = BRANDS[brand], None
     else:
         search_url = resolve_url("gearvn", category)
         name_re = name_match_re(category)
-        excl_re = name_exclude_re(category)  # loại mực in/cartridge/phụ kiện (trước đây bị bỏ qua)
     if not search_url:
         return []
     results: list[dict] = []

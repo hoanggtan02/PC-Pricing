@@ -57,12 +57,12 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     URL `paths.tgdd` của danh mục và giữ lại theo name_match (TGDĐ không có ô tìm kiếm).
     """
     is_laptop = category == "laptop"
+    excl_re = name_exclude_re(category)
     if is_laptop:
         list_url, name_re = BRANDS[brand], None
     else:
         list_url = resolve_url("tgdd", category)
         name_re = name_match_re(category)
-        excl_re = name_exclude_re(category)  # loại mực in/cartridge/phụ kiện (trước đây bị bỏ qua)
     if not list_url:
         return []
     results: list[dict] = []

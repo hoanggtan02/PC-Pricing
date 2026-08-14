@@ -78,12 +78,12 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     URL `paths.fptshop` của danh mục (có {page}) và giữ lại theo name_match.
     """
     is_laptop = category == "laptop"
+    excl_re = name_exclude_re(category)
     if is_laptop:
         url_tpl, name_re = BRANDS[brand], None
     else:
         url_tpl = resolve_url("fptshop", category)
         name_re = name_match_re(category)
-        excl_re = name_exclude_re(category)  # loại mực in/cartridge/phụ kiện (trước đây bị bỏ qua)
     if not url_tpl:
         return []
     results: list[dict] = []
