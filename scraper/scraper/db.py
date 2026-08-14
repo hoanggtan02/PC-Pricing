@@ -52,13 +52,30 @@ def fetch_active_sources(client: Client) -> list[dict]:
     Một source được nhận diện bởi (product_sku, competitor); `products` được join vào để lấy
     tên hiển thị.
     """
-    resp = (
-        client.table("sources")
-        .select("product_sku, competitor, url, products(sku, name)")
-        .eq("active", True)
-        .execute()
-    )
-    return resp.data or []
+    # PostgREST/Supabase giới hạn một response ở 1.000 dòng. Không phân trang ở
+    # đây khiến job Sync tưởng chỉ có 1.000 source dù database có hàng nghìn.
+    all_sources: list[dict] = []
+    page = 0
+    size = 1_000
+
+    while True:
+        rows = (
+            client.table("sources")
+            .select("product_sku, competitor, url, products(sku, name)")
+            .eq("active", True)
+            .order("competitor")
+            .order("product_sku")
+            .range(page * size, page * size + size - 1)
+            .execute()
+            .data
+            or []
+        )
+        all_sources.extend(rows)
+        if len(rows) < size:
+            break
+        page += 1
+
+    return all_sources
 
 
 def deactivate_source(client: Client, product_sku: str, competitor: str) -> None:

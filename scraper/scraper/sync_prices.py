@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import argparse
 import asyncio
+from collections import Counter
 import re
 import sys
 import json
@@ -45,6 +46,22 @@ def clean_price(text: str) -> int | None:
         return None
     digits = re.sub(r"[^\d]", "", text)
     return int(digits) if digits else None
+
+
+def extract_labeled_price(text: str) -> int | None:
+    """Lấy giá ngay sau nhãn giá chính, không lấy giá sản phẩm gợi ý."""
+    patterns = (
+        r"giá\s+(?:mua\s+online|khuyến\s+mãi|bán|ưu\s+đãi)\s*:?\s*([\d.,]+)\s*(?:đ|vnđ|vnd)",
+        r"(?:giá\s+hiện\s+tại|giá\s+sản\s+phẩm)\s*:?\s*([\d.,]+)\s*(?:đ|vnđ|vnd)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        price = clean_price(match.group(1))
+        if price and price > 1_000:
+            return price
+    return None
 
 async def extract_price_generic(page: Page, competitor: str) -> int | None:
     """Sử dụng nhiều chiến lược để trích xuất giá từ trang sản phẩm."""
@@ -104,6 +121,19 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
             continue
 
     # 4. Thử tìm regex generic trên HTML
+    # Nhiều site đổi class giá nhưng vẫn giữ nhãn văn bản (HACOM/TNC/An Phát).
+    # Thử body đã render trước, rồi đến HTML thô từ SSR.
+    try:
+        price = extract_labeled_price(await page.locator("body").inner_text())
+        if price:
+            return price
+    except Exception:
+        pass
+
+    price = extract_labeled_price(html)
+    if price:
+        return price
+
     match = re.search(r'property="product:price:amount"\s+content="(\d+)"', html)
     if match:
         return int(match.group(1))
@@ -169,6 +199,7 @@ async def worker(queue, context, dry_run, client, results):
             break
         success = await scrape_source(context, source, dry_run, client)
         results["success" if success else "failed"] += 1
+        results["by_competitor"][source["competitor"]]["success" if success else "failed"] += 1
         queue.task_done()
 
 async def run_sync(dry_run: bool, limit: int | None = None):
@@ -183,6 +214,10 @@ async def run_sync(dry_run: bool, limit: int | None = None):
         sources = sources[:limit]
 
     print(f"Bắt đầu đồng bộ giá cho {len(sources)} sources (Concurrency: {CONCURRENCY_LIMIT})...")
+    totals = Counter(source["competitor"] for source in sources)
+    print("Source active theo cửa hàng: " + ", ".join(
+        f"{competitor}={count}" for competitor, count in sorted(totals.items())
+    ))
     
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
@@ -208,7 +243,13 @@ async def run_sync(dry_run: bool, limit: int | None = None):
         for src in sources:
             await queue.put(src)
 
-        results = {"success": 0, "failed": 0}
+        results = {
+            "success": 0,
+            "failed": 0,
+            "by_competitor": {
+                competitor: {"success": 0, "failed": 0} for competitor in totals
+            },
+        }
         
         # Tạo worker tasks chạy song song
         tasks = []
@@ -223,6 +264,10 @@ async def run_sync(dry_run: bool, limit: int | None = None):
         await browser.close()
         
     print(f"\nHoàn tất đồng bộ giá: Thành công {results['success']}, Thất bại {results['failed']}.")
+    print("Kết quả theo cửa hàng:")
+    for competitor in sorted(results["by_competitor"]):
+        stats = results["by_competitor"][competitor]
+        print(f"  - {competitor}: {stats['success']}/{totals[competitor]} thành công, {stats['failed']} thất bại")
     
     # Refresh cả khi chỉ có source bị tắt vì hàng cũ/demo (không có giá mới thành công).
     # Nếu chỉ refresh khi success > 0, giá cũ vẫn kẹt trong snapshot.
