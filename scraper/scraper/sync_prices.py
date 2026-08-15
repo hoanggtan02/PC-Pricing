@@ -2,8 +2,6 @@
 Cách dùng:
     python -m scraper.sync_prices          # cào tất cả active sources, ghi vào Supabase
     python -m scraper.sync_prices --dry    # cào và in ra, không ghi vào DB
-    python -m scraper.sync_prices --dry --competitor "FPT Shop,Phong Vũ" --limit 200
-        # chỉ test các competitor này, tối đa 200 source, không ghi DB
 """
 
 from __future__ import annotations
@@ -367,26 +365,13 @@ def _interleave_by_competitor(sources: list[dict]) -> list[dict]:
     return out
 
 
-async def run_sync(
-    dry_run: bool,
-    limit: int | None = None,
-    competitors: list[str] | None = None,
-):
+async def run_sync(dry_run: bool, limit: int | None = None):
     client = get_client()
     # Lấy các source đang active
     sources = fetch_active_sources(client)
     if not sources:
         print("Không tìm thấy source active nào trong Database.")
         return
-
-    # Lọc theo competitor TRƯỚC khi xen kẽ/limit — hữu ích để test nhanh 1-3 shop cụ thể
-    # (vd sau khi FPT Shop/Phong Vũ/TGĐĐ báo lỗi hàng loạt) mà không phải chờ chạy hết 992 source.
-    if competitors:
-        wanted = {c.strip() for c in competitors if c.strip()}
-        sources = [s for s in sources if s["competitor"] in wanted]
-        if not sources:
-            print(f"Không có source active nào khớp competitor: {sorted(wanted)}")
-            return
 
     # Xen kẽ theo competitor TRƯỚC khi cắt --limit, để cả khi limit nhỏ vẫn thấy nhiều shop
     # (hữu ích lúc test), và để CONCURRENCY_LIMIT worker không dồn hết vào một competitor.
@@ -477,15 +462,9 @@ def main():
     parser = argparse.ArgumentParser(description="Sync prices directly from database source URLs.")
     parser.add_argument("--dry", action="store_true", help="dry run (don't write to DB)")
     parser.add_argument("--limit", type=int, default=None, help="limit the number of sources to scrape")
-    parser.add_argument(
-        "--competitor", default=None,
-        help='lọc theo (các) competitor, phân tách bởi dấu phẩy, '
-             'vd: "FPT Shop,Phong Vũ,Thế Giới Di Động". Bỏ trống = chạy tất cả.',
-    )
     args = parser.parse_args()
-
-    names = [n.strip() for n in args.competitor.split(",")] if args.competitor else None
-    asyncio.run(run_sync(args.dry, args.limit, names))
+    
+    asyncio.run(run_sync(args.dry, args.limit))
 
 if __name__ == "__main__":
     main()
