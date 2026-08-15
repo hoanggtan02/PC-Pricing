@@ -41,8 +41,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Các chuỗi lỗi cho thấy PROXY chết (hết hạn/quota/sập) chứ không phải trang đích lỗi. Dùng để
+# Các chuỗi lỗi cho thấy PROXY chết (hết hạn/quota/sập/TREO) chứ không phải trang đích lỗi. Dùng để
 # quyết định có nên mark_dead + rotate hay không (lỗi trang đích thì đổi proxy cũng vô ích).
+#
+# "Timeout" ĐƯỢC THÊM Ở ĐÂY (trước đây thiếu — bug thật): page.goto(..., wait_until="commit") chỉ
+# cần nhận header đầu tiên của response, nên nếu nó timeout sau 30s thì gần như chắc chắn là PROXY
+# bị treo/quá tải/hết quota (kết nối không bao giờ commit được), KHÔNG PHẢI trang đích chậm thật.
+# Trước khi thêm "Timeout" vào đây: log ở sync_prices.py vẫn IN ra đúng là "[HẠ TẦNG/MẠNG]" (nhãn đó
+# có check "Timeout" riêng), nhưng is_proxy_error() (dùng để quyết định mark_dead) lại KHÔNG nhận
+# diện "Timeout" — nên proxy treo không bao giờ bị loại khỏi vòng quay, và MỌI source proxy tiếp
+# theo trong lượt chạy (TGDD/FPT Shop/Phong Vũ) tiếp tục dùng lại đúng proxy đã treo đó, timeout lặp
+# lại hàng loạt, mỗi cái tốn nguyên 30s chờ vô ích thay vì rotate ngay sang proxy sống.
 PROXY_ERROR_MARKERS = (
     "ERR_TUNNEL_CONNECTION_FAILED",
     "ERR_PROXY_CONNECTION_FAILED",
@@ -50,6 +59,7 @@ PROXY_ERROR_MARKERS = (
     "ERR_SOCKS_CONNECTION_FAILED",
     "ERR_CONNECTION_RESET",
     "407",  # Proxy Authentication Required — thường là hết hạn/sai quota
+    "Timeout",  # page.goto/wait_for_selector treo — proxy không commit được kết nối
 )
 
 

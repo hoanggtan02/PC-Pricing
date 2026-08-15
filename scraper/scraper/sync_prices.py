@@ -48,6 +48,10 @@ SELECTORS = {
     "Hà Nội Computer": [".dpro-p-price", ".price-current", ".product-price"],
     "Memoryzone": [".product-price", ".price-current"],
     "FPT Shop": [".b1-semibold", ".fpt-price", ".price-current"],
+    # LƯU Ý: TGDD (Next.js) dùng css-module class BĂM (hash) — đổi theo mỗi lần deploy, nên các
+    # selector dưới đây chỉ là DỰ PHÒNG best-effort, KHÔNG đáng tin. Nguồn giá chính cho TGDD là
+    # regex bám text "Giá tại <Tỉnh/Thành>" trong extract_labeled_price() bên dưới (ổn định hơn
+    # nhiều vì đó là câu UI cố định, không phụ thuộc class CSS bị băm).
     "Thế Giới Di Động": [".box-price-present", ".price-current"]
 }
 
@@ -63,6 +67,12 @@ def extract_labeled_price(text: str) -> int | None:
     patterns = (
         r"giá\s+(?:mua\s+online|khuyến\s+mãi|bán|ưu\s+đãi)\s*:?\s*([\d.,]+)\s*(?:đ|vnđ|vnd)",
         r"(?:giá\s+hiện\s+tại|giá\s+sản\s+phẩm)\s*:?\s*([\d.,]+)\s*(?:đ|vnđ|vnd)",
+        # TGDD/ĐMX (Next.js, css-module class băm đổi theo mỗi lần deploy -> selector CSS không
+        # ổn định): trang KHÔNG có nhãn "giá bán:", giá nằm ngay sau câu hiển thị khu vực định giá
+        # "Giá tại <Tỉnh/Thành>" — câu này là text UI CỐ ĐỊNH, ổn định hơn nhiều so với bất kỳ class
+        # CSS nào. Cho phép whitespace/newline tùy ý giữa "giá tại ..." và số tiền đầu tiên gặp được
+        # (SSR nên số tiền đã nằm sẵn trong HTML thô, không cần đợi JS thêm).
+        r"giá\s+tại\s+[^\n₫đ]{0,40}[\s\S]{0,20}?([\d.,]{7,})\s*(?:₫|đ|vnđ|vnd)",
     )
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -136,7 +146,8 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
             continue
 
     # 4. Thử tìm regex generic trên HTML
-    # Nhiều site đổi class giá nhưng vẫn giữ nhãn văn bản (HACOM/TNC/An Phát).
+    # Nhiều site đổi class giá nhưng vẫn giữ nhãn văn bản (HACOM/TNC/An Phát), hoặc dùng câu UI
+    # cố định thay cho nhãn (TGDD/ĐMX: "Giá tại <Tỉnh/Thành>" — xem extract_labeled_price()).
     # Thử body đã render trước, rồi đến HTML thô từ SSR.
     try:
         price = extract_labeled_price(await page.locator("body").inner_text())
@@ -172,6 +183,11 @@ async def _wait_price_rendered(page: Page, competitor: str, timeout: int) -> Non
     (server-rendered, không cần đợi JS). Chờ 'visible' ở đây chỉ tốn thời gian oan, không tăng độ
     chính xác — 'attached' (element tồn tại trong DOM) là đủ vì ta chỉ đọc text/data-attribute,
     không cần element hiển thị trên màn hình.
+
+    LƯU Ý — TGDD: selector CSS trong SELECTORS chỉ là dự phòng (class bị băm, có thể không bao giờ
+    khớp). Nếu selector không xuất hiện trong `timeout`, hàm này im lặng bỏ qua (không raise) —
+    extract_price_generic() vẫn tìm được giá qua regex "Giá tại ..." ở strategy 4 vì giá TGDD là
+    SSR (đã nằm sẵn trong HTML ngay khi tải trang, không phụ thuộc việc chờ selector này).
     """
     try:
         await page.wait_for_selector(_price_wait_selector(competitor), timeout=timeout, state="attached")
