@@ -40,6 +40,18 @@ USER_AGENT = (
 # (ERR_TUNNEL_CONNECTION_FAILED hàng loạt dù URL hoàn toàn hợp lệ).
 PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop", "Thế Giới Di Động"}
 
+# Timeout cho page.goto(). Site cần proxy VN được cấp timeout NGẮN HƠN (15s thay vì 30s mặc định):
+# khi một proxy đã chết/treo (không bao giờ trả lời), mỗi request qua nó chắc chắn ăn đủ timeout
+# rồi mới fail — với hàng trăm source dùng chung 1 proxy chết trước khi kịp rotate (xem
+# proxy_pool.is_proxy_error, đã sửa để nhận diện đúng "ERR_TIMED_OUT"), 30s/request nhân lên rất
+# chậm. 15s vẫn đủ cho trang thật load qua proxy VN bình thường (proxy VN tuy chậm hơn direct
+# nhưng hiếm khi cần tới 15s để commit response đầu tiên), trong khi cắt gọn ~50% thời gian chờ
+# vô ích của các request dính đúng lúc proxy vừa chết giữa lượt chạy.
+GOTO_TIMEOUT_MS = {
+    "default": 30000,
+    "proxy": 15000,
+}
+
 # Selector lấy giá cho từng đối thủ (ở trang chi tiết sản phẩm)
 SELECTORS = {
     "CellphoneS": [".product__price--show", ".sale-price", "[itemprop='price']"],
@@ -239,8 +251,12 @@ async def scrape_source(
 
     try:
         print(f"  → Đang cào {competitor} - {sku}...")
-        # Navigate với timeout 30s
-        await page.goto(url, wait_until="commit", timeout=30000)
+        # Navigate với timeout riêng cho site cần proxy VN — 15s thay vì 30s mặc định. Khi một
+        # proxy đã chết/treo (không commit được response), mỗi request qua nó chắc chắn ăn đủ
+        # timeout rồi mới fail; rút ngắn timeout không đổi kết quả (vẫn fail) nhưng giảm ~50% thời
+        # gian lãng phí trước khi worker rảnh ra để dùng proxy khác (xem GOTO_TIMEOUT_MS ở đầu file).
+        goto_timeout = GOTO_TIMEOUT_MS["proxy"] if proxy is not None else GOTO_TIMEOUT_MS["default"]
+        await page.goto(url, wait_until="commit", timeout=goto_timeout)
 
         # Chờ ĐÚNG theo tín hiệu khối giá đã render (không phải chờ cố định) — xem _wait_price_rendered.
         # Site "nặng" (SLOW_COMPETITORS) được cấp thêm thời gian: khi CI chạy 5 tab song song, các
@@ -298,7 +314,7 @@ async def scrape_source(
         infra = any(tag in msg for tag in (
             "ERR_TUNNEL_CONNECTION_FAILED", "ERR_PROXY_CONNECTION_FAILED",
             "ERR_CONNECTION_REFUSED", "ERR_CONNECTION_RESET", "ERR_NAME_NOT_RESOLVED",
-            "Timeout", "net::ERR_",
+            "ERR_TIMED_OUT", "Timeout", "net::ERR_",
         ))
         label = "HẠ TẦNG/MẠNG" if infra else "PARSE"
         print(f"  ❌ {competitor} - {sku}: Lỗi cào [{label}] ({msg})")

@@ -52,20 +52,39 @@ load_dotenv()
 # diện "Timeout" — nên proxy treo không bao giờ bị loại khỏi vòng quay, và MỌI source proxy tiếp
 # theo trong lượt chạy (TGDD/FPT Shop/Phong Vũ) tiếp tục dùng lại đúng proxy đã treo đó, timeout lặp
 # lại hàng loạt, mỗi cái tốn nguyên 30s chờ vô ích thay vì rotate ngay sang proxy sống.
+#
+# "ERR_TIMED_OUT" ĐƯỢC THÊM Ở ĐÂY (bug thật thứ 2, phát hiện 2026-08 từ log TGDD 100% fail): lỗi
+# thực tế Chromium/Playwright ném ra khi proxy KHÔNG BAO GIỜ trả lời là "net::ERR_TIMED_OUT" —
+# chuỗi này KHÔNG chứa chuỗi con "Timeout" (khác cách viết: "TIMED_OUT" viết hoa toàn bộ và tách
+# chữ khác với "Timeout"). Vì is_proxy_error() dùng khớp CHUỖI CON đơn giản (không phân biệt hoa
+# thường), "ERR_TIMED_OUT" lọt qua mọi marker cũ → is_proxy_error() luôn trả False cho lỗi này →
+# mark_dead() KHÔNG BAO GIỜ được gọi → proxy chết bị dùng lại cho MỌI source còn lại trong hàng đợi,
+# mỗi source ăn đủ 30s timeout rồi fail — đúng triệu chứng "100% fail liên tục, không thấy dòng
+# 🔄 Đổi sang proxy nào" trong log thực tế của TGDD.
 PROXY_ERROR_MARKERS = (
     "ERR_TUNNEL_CONNECTION_FAILED",
     "ERR_PROXY_CONNECTION_FAILED",
     "ERR_NO_SUPPORTED_PROXIES",
     "ERR_SOCKS_CONNECTION_FAILED",
     "ERR_CONNECTION_RESET",
+    "ERR_CONNECTION_REFUSED",
+    "ERR_CONNECTION_CLOSED",
+    "ERR_TIMED_OUT",          # net::ERR_TIMED_OUT — proxy không bao giờ trả lời (bug đã sửa)
+    "ERR_EMPTY_RESPONSE",
     "407",  # Proxy Authentication Required — thường là hết hạn/sai quota
     "Timeout",  # page.goto/wait_for_selector treo — proxy không commit được kết nối
 )
 
 
 def is_proxy_error(exc_msg: str) -> bool:
-    """True nếu thông báo lỗi cho thấy PROXY chết (nên rotate), không phải lỗi trang đích."""
-    return any(marker in exc_msg for marker in PROXY_ERROR_MARKERS)
+    """True nếu thông báo lỗi cho thấy PROXY chết (nên rotate), không phải lỗi trang đích.
+
+    So khớp KHÔNG phân biệt hoa/thường — tránh lặp lại đúng bug đã gặp (marker "Timeout" không
+    khớp "ERR_TIMED_OUT" vì khác cách viết hoa/thường + khác chữ). Dùng .upper() cho cả 2 vế để
+    marker nào thêm sau này cũng an toàn dù ai đó gõ hoa/thường khác nhau.
+    """
+    msg_upper = exc_msg.upper()
+    return any(marker.upper() in msg_upper for marker in PROXY_ERROR_MARKERS)
 
 
 class ProxyPool:
