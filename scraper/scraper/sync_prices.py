@@ -1,7 +1,10 @@
 """Script cào giá đồng bộ theo link đã có trong Database (Mode B).
 Cách dùng:
-    python -m scraper.sync_prices          # cào tất cả active sources, ghi vào Supabase
-    python -m scraper.sync_prices --dry    # cào và in ra, không ghi vào DB
+    python -m scraper.sync_prices                          # cào tất cả active sources, ghi vào Supabase
+    python -m scraper.sync_prices --dry                     # cào và in ra, không ghi vào DB
+    python -m scraper.sync_prices --competitor "GearVN"     # chỉ cào MỘT cửa hàng (job song song)
+    python -m scraper.sync_prices --skip-refresh            # không refresh cache cuối (dành cho job riêng)
+    python -m scraper.sync_prices --failures-file out.tsv   # ghi danh sách link cào lỗi ra file TSV
 """
 
 from __future__ import annotations
@@ -203,15 +206,31 @@ async def _wait_price_rendered(page: Page, competitor: str, timeout: int) -> Non
 SLOW_COMPETITORS = {"An Phát PC"}
 
 
-async def scrape_source(context, source: dict, dry_run: bool, client, proxy: dict | None = None) -> bool:
+def _record_failure(
+    failures: list[dict], competitor: str, sku: str, url: str | None, reason: str
+) -> None:
+    """Ghi lại MỘT link cào lỗi (để tổng hợp thành báo cáo cuối lượt chạy / job CI).
+    `reason` nên ngắn gọn, một dòng — sẽ bị làm sạch tab/newline trước khi ghi ra file TSV."""
+    failures.append(
+        {"competitor": competitor, "sku": sku, "url": url or "", "reason": reason}
+    )
+
+
+async def scrape_source(
+    context, source: dict, dry_run: bool, client, proxy: dict | None = None,
+    failures: list[dict] | None = None,
+) -> bool:
     """Trả về True nếu lấy được giá. `proxy` (nếu có) là proxy hiện tại của `context`, dùng để
-    biết nên mark_dead khi lỗi là lỗi PROXY (xem is_proxy_error) chứ không phải lỗi trang đích."""
+    biết nên mark_dead khi lỗi là lỗi PROXY (xem is_proxy_error) chứ không phải lỗi trang đích.
+    `failures` (nếu có) là danh sách dùng chung để gom lại các link cào lỗi trong lượt chạy."""
     competitor = source["competitor"]
     url = source["url"]
     sku = source["product_sku"]
     
     if not url or url == "#" or "javascript" in url:
         print(f"  ! Skip {competitor} - {sku}: URL không hợp lệ ({url})")
+        if failures is not None:
+            _record_failure(failures, competitor, sku, url, "URL không hợp lệ")
         return False
 
     page = await context.new_page()
@@ -238,6 +257,8 @@ async def scrape_source(context, source: dict, dry_run: bool, client, proxy: dic
             if not dry_run:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, deactivate_source, client, sku, competitor)
+            if failures is not None:
+                _record_failure(failures, competitor, sku, url, f"Hàng cũ/demo, đã tắt source ({title[:60]})")
             return False
 
         price = await extract_price_generic(page, competitor)
@@ -265,6 +286,8 @@ async def scrape_source(context, source: dict, dry_run: bool, client, proxy: dic
             return True
         else:
             print(f"  ❌ {competitor} - {sku}: Không tìm thấy giá trên trang ({url})")
+            if failures is not None:
+                _record_failure(failures, competitor, sku, url, "Không tìm thấy giá trên trang")
             return False
             
     except Exception as e:
@@ -279,6 +302,8 @@ async def scrape_source(context, source: dict, dry_run: bool, client, proxy: dic
         ))
         label = "HẠ TẦNG/MẠNG" if infra else "PARSE"
         print(f"  ❌ {competitor} - {sku}: Lỗi cào [{label}] ({msg})")
+        if failures is not None:
+            _record_failure(failures, competitor, sku, url, f"[{label}] {msg}")
         # Lỗi PROXY thật (hết hạn/sập) -> đánh dấu chết trong pool. worker() sẽ phát hiện qua
         # pool.current() đổi khác context["proxy_obj"] hiện tại và tự REBUILD context proxy mới
         # cho các source proxy TIẾP THEO trong hàng đợi — không cần dừng cả job để đổi tay.
@@ -324,6 +349,10 @@ async def worker(queue, browser, contexts: dict, dry_run, client, results):
                       f"pool ({pool.status()}).")
                 results["failed"] += 1
                 results["by_competitor"][competitor]["failed"] += 1
+                _record_failure(
+                    results["failures"], competitor, source["product_sku"], source.get("url"),
+                    "Hết proxy sống trong pool",
+                )
                 queue.task_done()
                 continue
             # Proxy hiện tại của contexts đã đổi khác proxy sống mới nhất -> rebuild context.
@@ -346,7 +375,9 @@ async def worker(queue, browser, contexts: dict, dry_run, client, results):
             context = contexts["direct"]
             proxy_for_mark = None
 
-        success = await scrape_source(context, source, dry_run, client, proxy=proxy_for_mark)
+        success = await scrape_source(
+            context, source, dry_run, client, proxy=proxy_for_mark, failures=results["failures"]
+        )
         results["success" if success else "failed"] += 1
         results["by_competitor"][source["competitor"]]["success" if success else "failed"] += 1
         queue.task_done()
@@ -365,6 +396,9 @@ def _interleave_by_competitor(sources: list[dict]) -> list[dict]:
 
     Xen kẽ round-robin rải request ra nhiều competitor khác nhau, để 5 worker song song hiếm khi
     cùng nhắm vào một site cùng lúc. KHÔNG đổi tổng số source hay nội dung — chỉ đổi THỨ TỰ.
+
+    Khi lượt chạy chỉ có MỘT competitor (job matrix theo cửa hàng, xem sync.yml), hàm này là no-op
+    thực tế — không có gì để xen kẽ, nhưng vẫn an toàn khi gọi.
     """
     from collections import defaultdict, deque
 
@@ -381,12 +415,42 @@ def _interleave_by_competitor(sources: list[dict]) -> list[dict]:
     return out
 
 
-async def run_sync(dry_run: bool, limit: int | None = None):
+def _write_failures_file(path: str, failures: list[dict]) -> None:
+    """Ghi danh sách link cào lỗi ra file TSV (competitor, sku, url, reason) — dùng để CI upload
+    làm artifact và job `summary` gom lại thành báo cáo cuối lượt chạy (xem sync.yml).
+
+    Luôn ghi file (kể cả rỗng, chỉ có header) để bước upload-artifact trong CI không phải đoán
+    file có tồn tại hay không."""
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("competitor\tsku\turl\treason\n")
+            for row in failures:
+                reason = (row.get("reason") or "").replace("\t", " ").replace("\n", " ")
+                f.write(
+                    f"{row.get('competitor', '')}\t{row.get('sku', '')}\t"
+                    f"{row.get('url', '')}\t{reason}\n"
+                )
+        print(f"Đã ghi {len(failures)} link cào lỗi vào {path}")
+    except Exception as e:
+        print(f"Lỗi ghi file lỗi {path}: {e}")
+
+
+async def run_sync(
+    dry_run: bool,
+    limit: int | None = None,
+    competitor: str | None = None,
+    skip_refresh: bool = False,
+    failures_file: str | None = "sync_failures.tsv",
+):
     client = get_client()
-    # Lấy các source đang active
-    sources = fetch_active_sources(client)
+    # Chỉ lấy source của MỘT competitor khi chạy job song song theo cửa hàng (sync.yml matrix).
+    # Bỏ trống competitor -> lấy toàn bộ (hành vi cũ, chạy tuần tự tất cả cửa hàng trong 1 process).
+    sources = fetch_active_sources(client, competitor=competitor)
     if not sources:
-        print("Không tìm thấy source active nào trong Database.")
+        who = f" cho '{competitor}'" if competitor else ""
+        print(f"Không tìm thấy source active nào{who} trong Database.")
+        if failures_file:
+            _write_failures_file(failures_file, [])
         return
 
     # Xen kẽ theo competitor TRƯỚC khi cắt --limit, để cả khi limit nhỏ vẫn thấy nhiều shop
@@ -399,7 +463,7 @@ async def run_sync(dry_run: bool, limit: int | None = None):
     print(f"Bắt đầu đồng bộ giá cho {len(sources)} sources (Concurrency: {CONCURRENCY_LIMIT})...")
     totals = Counter(source["competitor"] for source in sources)
     print("Source active theo cửa hàng: " + ", ".join(
-        f"{competitor}={count}" for competitor, count in sorted(totals.items())
+        f"{c}={n}" for c, n in sorted(totals.items())
     ))
     proxy_needed = sorted(c for c in totals if c in PROXY_COMPETITORS)
     pool = get_pool()
@@ -439,8 +503,9 @@ async def run_sync(dry_run: bool, limit: int | None = None):
             "success": 0,
             "failed": 0,
             "by_competitor": {
-                competitor: {"success": 0, "failed": 0} for competitor in totals
+                competitor_name: {"success": 0, "failed": 0} for competitor_name in totals
             },
+            "failures": [],  # danh sách chi tiết mọi link cào lỗi trong lượt chạy này
         }
         
         # Tạo worker tasks chạy song song
@@ -459,13 +524,22 @@ async def run_sync(dry_run: bool, limit: int | None = None):
         print(f"Trạng thái proxy cuối lượt chạy: {pool.status()}")
     print(f"\nHoàn tất đồng bộ giá: Thành công {results['success']}, Thất bại {results['failed']}.")
     print("Kết quả theo cửa hàng:")
-    for competitor in sorted(results["by_competitor"]):
-        stats = results["by_competitor"][competitor]
-        print(f"  - {competitor}: {stats['success']}/{totals[competitor]} thành công, {stats['failed']} thất bại")
-    
-    # Refresh cả khi chỉ có source bị tắt vì hàng cũ/demo (không có giá mới thành công).
-    # Nếu chỉ refresh khi success > 0, giá cũ vẫn kẹt trong snapshot.
-    if not dry_run:
+    for c in sorted(results["by_competitor"]):
+        stats = results["by_competitor"][c]
+        print(f"  - {c}: {stats['success']}/{totals[c]} thành công, {stats['failed']} thất bại")
+
+    # In danh sách link lỗi ngay trong log (dễ đọc khi debug tay), rồi ghi ra file để CI gom lại.
+    if results["failures"]:
+        print(f"\n⚠️  {len(results['failures'])} link cào lỗi trong lượt chạy này:")
+        for row in results["failures"]:
+            print(f"  - [{row['competitor']}] {row['sku']}: {row['reason']} ({row['url']})")
+    if failures_file:
+        _write_failures_file(failures_file, results["failures"])
+
+    # skip_refresh=True khi chạy job song song theo competitor (sync.yml) — refresh được gộp lại
+    # thành MỘT job riêng chạy SAU KHI mọi job competitor xong, tránh nhiều job cùng RPC refresh
+    # chồng lên nhau (race) hoặc refresh sớm khi các job khác chưa ghi xong.
+    if not dry_run and not skip_refresh:
         print("Đang làm mới cache Supabase...")
         try:
             client.rpc("refresh_latest_prices").execute()
@@ -474,13 +548,30 @@ async def run_sync(dry_run: bool, limit: int | None = None):
             print(f"Lỗi làm mới cache: {e}")
 
 def main():
-    import os
     parser = argparse.ArgumentParser(description="Sync prices directly from database source URLs.")
     parser.add_argument("--dry", action="store_true", help="dry run (don't write to DB)")
     parser.add_argument("--limit", type=int, default=None, help="limit the number of sources to scrape")
+    parser.add_argument(
+        "--competitor", default=None,
+        help="chỉ đồng bộ giá cho MỘT competitor (dùng khi chạy job song song theo cửa hàng, xem sync.yml)",
+    )
+    parser.add_argument(
+        "--skip-refresh", action="store_true",
+        help="không refresh cache latest_prices sau khi chạy — dùng khi có job refresh riêng ở cuối",
+    )
+    parser.add_argument(
+        "--failures-file", default="sync_failures.tsv",
+        help="đường dẫn file TSV ghi lại các link cào lỗi (competitor/sku/url/reason); "
+             "truyền rỗng ('') để tắt ghi file",
+    )
     args = parser.parse_args()
-    
-    asyncio.run(run_sync(args.dry, args.limit))
+
+    asyncio.run(
+        run_sync(
+            args.dry, args.limit, args.competitor, args.skip_refresh,
+            failures_file=args.failures_file or None,
+        )
+    )
 
 if __name__ == "__main__":
     main()

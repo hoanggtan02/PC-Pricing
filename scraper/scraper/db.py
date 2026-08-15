@@ -46,11 +46,15 @@ def fetch_catalog_skus(client: Client, category: str | None = None) -> set[str]:
     return skus
 
 
-def fetch_active_sources(client: Client) -> list[dict]:
+def fetch_active_sources(client: Client, competitor: str | None = None) -> list[dict]:
     """Trả về các source đang active kèm join với sản phẩm tương ứng, để biết cần scrape gì.
 
     Một source được nhận diện bởi (product_sku, competitor); `products` được join vào để lấy
     tên hiển thị.
+
+    Truyền `competitor` để chỉ lấy source của MỘT cửa hàng — dùng khi chạy job song song theo
+    từng competitor (xem .github/workflows/sync.yml, mỗi job matrix chỉ lo một shop). Bỏ trống
+    (None) sẽ lấy toàn bộ source active như trước (mọi competitor).
     """
     # PostgREST/Supabase giới hạn một response ở 1.000 dòng. Không phân trang ở
     # đây khiến job Sync tưởng chỉ có 1.000 source dù database có hàng nghìn.
@@ -59,11 +63,15 @@ def fetch_active_sources(client: Client) -> list[dict]:
     size = 1_000
 
     while True:
-        rows = (
+        q = (
             client.table("sources")
             .select("product_sku, competitor, url, products(sku, name)")
             .eq("active", True)
-            .order("competitor")
+        )
+        if competitor:
+            q = q.eq("competitor", competitor)
+        rows = (
+            q.order("competitor")
             .order("product_sku")
             .range(page * size, page * size + size - 1)
             .execute()

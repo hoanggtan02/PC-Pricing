@@ -3,6 +3,14 @@ name: Daily price sync (Mode B - Link crawl)
 # Mode B: Đồng bộ giá theo link trực tiếp từ DB — NHANH, tiết kiệm tài nguyên.
 # Chạy MỖI NGÀY (kể cả cuối tuần). Không khám phá SP mới, chỉ cập nhật giá
 # cho các SKU đã có trong sources. URL thủ công (is_manual_url=true) được bảo vệ.
+#
+# Mỗi CỬA HÀNG chạy trong MỘT job riêng (matrix), SONG SONG với nhau — nhanh hơn (không còn 9
+# competitor dồn chung CONCURRENCY_LIMIT=5 worker của một process) và log tách rõ theo từng shop
+# thay vì lẫn lộn trong một job dài.
+#
+# `summary` gom danh sách link cào lỗi (competitor/sku/url/reason) của TẤT CẢ job lại thành một
+# báo cáo duy nhất — chạy dù có job nào lỗi (if: always()).
+# `refresh` làm mới cache latest_prices_cache CHỈ MỘT LẦN, sau khi mọi job sync xong.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -19,7 +27,140 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Mỗi leg = một cửa hàng. `id` dùng làm tên file/artifact (không dấu, không khoảng trắng);
+  # `competitor` là giá trị THẬT lưu trong DB (cột competitors.name / sources.competitor).
   sync:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false   # một shop lỗi không huỷ các shop khác
+      matrix:
+        include:
+          - { id: tnc,         competitor: "Thành Nhân" }
+          - { id: cellphones,  competitor: "CellphoneS" }
+          - { id: anphat,      competitor: "An Phát PC" }
+          - { id: hacom,       competitor: "Hà Nội Computer" }
+          - { id: gearvn,      competitor: "GearVN" }
+          - { id: memoryzone,  competitor: "Memoryzone" }
+          - { id: phongvu,     competitor: "Phong Vũ" }
+          - { id: fptshop,     competitor: "FPT Shop" }
+          - { id: tgdd,        competitor: "Thế Giới Di Động" }
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Cache trình duyệt Chromium — 9 job song song tự tải lại chromium sẽ tốn băng thông lặp lại
+      # vô ích. Cache theo hash requirements.txt.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('scraper/requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Sync prices - ${{ matrix.competitor }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PROXY_LIST: ${{ secrets.PROXY_LIST }}
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+        run: |
+          echo "::group::Mode B - Sync prices (${{ matrix.competitor }})"
+          python -m scraper.sync_prices \
+            --competitor "${{ matrix.competitor }}" \
+            --skip-refresh \
+            --failures-file "$RUNNER_TEMP/failures-${{ matrix.id }}.tsv"
+          echo "::endgroup::"
+
+      # Upload dù job lỗi (if: always()) — job `summary` cần dữ liệu này để tổng hợp. File trống
+      # (không lỗi) vẫn được upload bình thường; if-no-files-found: ignore chỉ để phòng script
+      # crash trước khi kịp ghi file.
+      - name: Upload failure log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failures-${{ matrix.id }}
+          path: ${{ runner.temp }}/failures-${{ matrix.id }}.tsv
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ── Gom log lỗi (link cào lỗi) của TẤT CẢ 9 job lại thành MỘT báo cáo duy nhất. Chạy dù có job
+  # sync nào lỗi/timeout (if: always()) — để không mất báo cáo của các job đã chạy xong.
+  summary:
+    needs: sync
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all failure logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "failures-*"
+          path: /tmp/failures
+          merge-multiple: true
+
+      - name: Aggregate failed scrape links
+        run: |
+          ALL=/tmp/all_failures.tsv
+          : > "$ALL"
+          # Gộp mọi file *.tsv, bỏ dòng header lặp lại (mỗi file con đều có header riêng).
+          for f in /tmp/failures/*.tsv; do
+            [ -f "$f" ] || continue
+            tail -n +2 "$f" >> "$ALL"
+          done
+
+          TOTAL=$(wc -l < "$ALL" | tr -d ' ')
+
+          echo "::group::❌ Tổng hợp link cào lỗi (toàn bộ 9 cửa hàng)"
+          echo "Tổng số link lỗi: $TOTAL"
+          if [ "$TOTAL" -gt 0 ]; then
+            echo ""
+            echo "== Số lỗi theo cửa hàng =="
+            awk -F'\t' '{c[$1]++} END{for (k in c) print c[k]"\t"k}' "$ALL" \
+              | sort -rn | awk -F'\t' '{printf "%6s  %s\n",$1,$2}'
+            echo ""
+            echo "== Số lỗi theo loại (reason) =="
+            awk -F'\t' '{print $4}' "$ALL" | sed -E 's/^\[([A-ZÀ-Ỹ\/ ]+)\].*/[\1]/' \
+              | sort | uniq -c | sort -rn
+            echo ""
+            echo "== Chi tiết (competitor · sku · reason · url) =="
+            awk -F'\t' '{printf "- [%s] %s: %s  (%s)\n",$1,$2,$4,$3}' "$ALL"
+          else
+            echo "Không có link nào cào lỗi trong lượt chạy này 🎉"
+          fi
+          echo "::endgroup::"
+
+          # Ghi thêm vào Job Summary của GitHub Actions để xem ngay trên tab Summary, không cần
+          # mở log chi tiết.
+          {
+            echo "## ❌ Link cào lỗi (Daily price sync)"
+            echo ""
+            echo "Tổng số: **$TOTAL**"
+            echo ""
+            if [ "$TOTAL" -gt 0 ]; then
+              echo "| Cửa hàng | SKU | Lý do | URL |"
+              echo "|---|---|---|---|"
+              awk -F'\t' '{printf "| %s | %s | %s | %s |\n",$1,$2,$4,$3}' "$ALL"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── latest_prices_cache là ẢNH CHỤP — phải refresh sau khi TẤT CẢ job sync xong. Chạy MỘT LẦN
+  # DUY NHẤT ở đây (không phải mỗi job tự refresh — vừa thừa vừa dễ đụng race). if: always() để
+  # refresh cả khi chỉ có source bị tắt vì hàng cũ/demo ở một vài job (không có giá mới thành
+  # công) — nếu chỉ refresh khi mọi job sync đều success, giá cũ vẫn kẹt trong snapshot.
+  refresh:
+    needs: sync
+    if: always()
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -33,24 +174,10 @@ jobs:
 
       - name: Install dependencies
         run: |
+          echo "::group::pip install"
           pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
-
-      - name: Sync prices from existing source URLs
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          PROXY_LIST: ${{ secrets.PROXY_LIST }}
-          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
-          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
-          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
-        run: |
-          echo "::group::Mode B - Sync prices"
-          python -m scraper.sync_prices
           echo "::endgroup::"
 
-      # Refresh cache ngay sau khi sync (sync_prices đã gọi nội bộ, đây là bước
-      # dự phòng riêng để CI đỏ rõ ràng nếu refresh thất bại).
       - name: Refresh latest_prices cache
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
