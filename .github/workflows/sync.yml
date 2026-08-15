@@ -3,6 +3,13 @@ name: Daily price sync (Mode B - Link crawl)
 # Mode B: Đồng bộ giá theo link trực tiếp từ DB — NHANH, tiết kiệm tài nguyên.
 # Chạy MỖI NGÀY (kể cả cuối tuần). Không khám phá SP mới, chỉ cập nhật giá
 # cho các SKU đã có trong sources. URL thủ công (is_manual_url=true) được bảo vệ.
+#
+# Chạy TAY để test nhanh (vd chỉ 3 shop cần proxy VN sau khi báo lỗi hàng loạt):
+#   Tab Actions → chọn workflow này → "Run workflow" → điền:
+#     competitor: "FPT Shop,Phong Vũ,Thế Giới Di Động"
+#     limit: 300
+#     dry_run: true
+#   Để trống mọi input = chạy y hệt lịch tự động (tất cả source, ghi vào DB).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -12,6 +19,21 @@ on:
     # Run 2: 13:00 VN (06:00 UTC) → xong ~14:00 VN
     - cron: "0 6 * * *"
   workflow_dispatch:
+    inputs:
+      competitor:
+        description: 'Lọc competitor (phân tách bởi dấu phẩy). Để trống = chạy tất cả (như lịch tự động).'
+        required: false
+        default: ''
+      limit:
+        description: 'Giới hạn số source (để test nhanh). Để trống = không giới hạn.'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Chạy dry-run (không ghi DB)?'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
 
 # Chỉ 1 lần chạy tại một thời điểm (tránh đụng Supabase)
 concurrency:
@@ -40,18 +62,40 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          PROXY_LIST: ${{ secrets.PROXY_LIST }}
           PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
           PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+          PROXY_LIST: ${{ secrets.PROXY_LIST }}
         run: |
           echo "::group::Mode B - Sync prices"
-          python -m scraper.sync_prices
+
+          ARGS=()
+          COMPETITOR="${{ github.event.inputs.competitor }}"
+          LIMIT="${{ github.event.inputs.limit }}"
+          DRY_RUN="${{ github.event.inputs.dry_run }}"
+
+          if [ -n "$COMPETITOR" ]; then
+            ARGS+=(--competitor "$COMPETITOR")
+          fi
+          if [ -n "$LIMIT" ]; then
+            ARGS+=(--limit "$LIMIT")
+          fi
+          # workflow_dispatch mặc định dry_run="true"; lịch tự động (schedule) không có input này
+          # nên DRY_RUN rỗng -> KHÔNG thêm --dry, chạy ghi DB như bình thường.
+          if [ "$DRY_RUN" = "true" ]; then
+            ARGS+=(--dry)
+          fi
+
+          echo "Chạy: python -m scraper.sync_prices ${ARGS[*]}"
+          python -m scraper.sync_prices "${ARGS[@]}"
+
           echo "::endgroup::"
 
       # Refresh cache ngay sau khi sync (sync_prices đã gọi nội bộ, đây là bước
-      # dự phòng riêng để CI đỏ rõ ràng nếu refresh thất bại).
+      # dự phòng riêng để CI đỏ rõ ràng nếu refresh thất bại). Bỏ qua khi dry-run
+      # thật (input dry_run=true) vì lúc đó không có gì mới để refresh.
       - name: Refresh latest_prices cache
+        if: github.event.inputs.dry_run != 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
