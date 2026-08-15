@@ -127,7 +127,10 @@ brands:
   Keychron:  [keychron]
   Razer:     [razer]
   Rapoo:     [rapoo]
-  Microsoft: [microsoft]
+  # Microsoft: alias "windows"/"office 365"/"microsoft 365" thêm vào để phần mềm bản quyền (category
+  # `software`) nhận đúng brand — trước đây chỉ có "microsoft" nên "Windows 11 Pro" / "Office 365"
+  # đứng một mình (không kèm chữ "Microsoft") sẽ rơi về "Other" và bị software_sku() bỏ qua.
+  Microsoft: [microsoft, windows, "office 365", "microsoft 365"]
   Dareu:     [dareu, "dare-u"]
   Fuhlen:    [fuhlen]
   Newmen:    [newmen]
@@ -168,6 +171,25 @@ brands:
   Zadez:           [zadez]
   Mytechsun:       [mytechsun]
   Zalman:          [zalman]
+
+  # ── phần mềm bản quyền / diệt virus (category `software`) ──
+  # Không dùng "office"/"pc"/"mac" đơn lẻ làm từ khóa vì đó là từ chung chung, dễ khớp nhầm sản phẩm
+  # ở các danh mục khác (VD "PC" trong tên PC nguyên bộ). "Microsoft" đã có alias windows/office 365
+  # ở trên; các brand dưới đây là những từ khóa RIÊNG, không đụng danh mục khác.
+  Kaspersky:   [kaspersky]
+  Bitdefender: [bitdefender]
+  ESET:        [eset]
+  Norton:      [norton]
+  McAfee:      [mcafee, "mc afee"]
+  BKAV:        [bkav]
+  Adobe:       [adobe]
+  AVG:         [avg]
+  Avast:       [avast]
+  Autodesk:    [autodesk, autocad]
+  VMware:      [vmware]
+  CyberLink:   [cyberlink]
+  IObit:       [iobit]
+  WinRAR:      [winrar]
 
 # Category prefixes to strip before structural brand extraction (for names like
 # "Màn hình <descriptors> <BRAND> <model>"). Used only when no keyword above matches.
@@ -287,3 +309,11 @@ name_prefixes:
   - "mini"
   - "và"
   - "+"
+  # phần mềm bản quyền — để brand không rơi vào "Phần"/"Bản" khi hãng chưa có sẵn từ khóa
+  - "phần mềm bản quyền"
+  - "phần mềm diệt virus"
+  - "phần mềm"
+  - "phan mem"
+  - "bản quyền"
+  - "ban quyen"
+  - "key bản quyền"

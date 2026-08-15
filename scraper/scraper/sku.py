@@ -1149,6 +1149,79 @@ def mainboard_sku(name: str | None) -> str | None:
     return "-".join(parts).upper().replace(" ", "-")
 
 
+# ── Phần mềm bản quyền (Windows/Office, diệt virus, đồ họa...) ──────────────────────────────
+# Tên đọc "<Phần mềm/Bản quyền> <BRAND> <SẢN PHẨM> <PHIÊN BẢN/EDITION> <SỐ THIẾT BỊ> <THỜI HẠN>",
+# ví dụ "Phần mềm diệt virus Kaspersky Total Security 3 Thiết Bị 1 Năm", "Microsoft Office Home
+# and Student 2024", "Windows 11 Pro FPP".
+#
+# KHÔNG có mã part như phần cứng — định danh là chính TÊN SẢN PHẨM còn lại sau khi bỏ filler, cộng
+# với SỐ THIẾT BỊ/THỜI HẠN tách riêng thành hậu tố. Số thiết bị + thời hạn LÀ một phần định danh
+# thật: Kaspersky "3 Thiết Bị / 1 Năm" và "5 Thiết Bị / 1 Năm" và "3 Thiết Bị / 2 Năm" là BA gói
+# khác nhau, giá khác nhau thật — gộp chung sẽ ghi đè nhau trong catalog và so giá sai (cùng lớp
+# lỗi với vụ RAM/CPU trùng SKU).
+_SW_SPEC = re.compile(
+    r"^(phần|phan|mềm|mem|bản|ban|quyền|quyen|key|license|cho|digital|download|esd|box|fpp|oem|"
+    r"retail|tem|hologram|new|chính|chinh|hãng|hang|vĩnh|vinh|viễn|vien|trọn|tron|đời|doi|"
+    r"kích|kich|hoạt|hoat|active|code|activation)$",
+    re.I,
+)
+# Số thiết bị: "3 thiết bị", "3 PC", "1 user", "5 device", "1 máy" — TÁCH RIÊNG khỏi thân tên vì
+# nó là một phần định danh (khác gói = khác giá), không phải filler để bỏ đi.
+_SW_DEVICES = re.compile(r"\b(\d{1,2})\s*(pc|thiết bị|thiet bi|user|device|máy|may)\b", re.I)
+# Thời hạn: "1 năm", "12 tháng", "2 year" — cũng là một phần định danh, tách riêng như trên.
+_SW_DURATION = re.compile(r"\b(\d{1,2})\s*(năm|nam|year|tháng|thang|month)\b", re.I)
+
+
+def software_sku(name: str | None) -> str | None:
+    """BRAND-<TÊN SẢN PHẨM>-<SỐ THIẾT BỊ?>-<THỜI HẠN?> cho phần mềm bản quyền/diệt virus.
+
+    Không có mã part như phần cứng nên khoá theo brand + các token định danh còn lại của tên (bỏ
+    filler: "phần mềm", "bản quyền", "key"...). Số thiết bị/thời hạn được TÁCH RIÊNG thành hậu tố
+    vì chúng LÀ một phần định danh — bỏ đi sẽ gộp nhầm các gói khác giá vào một SKU.
+    """
+    from .brand import brand_of
+
+    if not name:
+        return None
+    brand = brand_of(name)
+    if brand.lower() == "other":
+        return None
+    BRAND = brand.upper()
+
+    devices = _SW_DEVICES.search(name)
+    duration = _SW_DURATION.search(name)
+
+    # Bỏ ngoặc + cụm số-thiết-bị/thời-hạn (đã trích riêng ở trên) khỏi thân tên trước khi tách
+    # token, để "3"/"1" không lẫn vào phần định danh dưới dạng số trần vô nghĩa.
+    body = re.sub(r"\([^)]*\)", " ", name)
+    if devices:
+        body = body.replace(devices.group(0), " ")
+    if duration:
+        body = body.replace(duration.group(0), " ")
+
+    toks = [t for t in re.split(r"[\s,]+", body) if t]
+    brand_toks = set(brand.lower().replace("-", " ").split())
+    core: list[str] = []
+    for t in toks:
+        low = t.lower().strip(".,")
+        if not low or low in brand_toks or _SW_SPEC.match(low):
+            continue
+        cleaned = re.sub(r"[^\w]", "", t).upper()
+        if cleaned:
+            core.append(cleaned)
+    if not core:
+        return None
+
+    parts = [BRAND, *core[:4]]  # giới hạn 4 token định danh — đủ phân biệt, tránh SKU quá dài
+    if devices:
+        unit = "PC" if re.search(r"pc|máy|may|thiết bị|thiet bi", devices.group(2), re.I) else "USER"
+        parts.append(f"{devices.group(1)}{unit}")
+    if duration:
+        unit = "Y" if re.search(r"năm|nam|year", duration.group(2), re.I) else "M"
+        parts.append(f"{duration.group(1)}{unit}")
+    return "-".join(parts).upper().replace(" ", "-")
+
+
 # Per-category identity dispatch. Add a category = add its function here.
 _CATEGORY_SKU = {
     "printer": av_sku,
@@ -1179,6 +1252,8 @@ _CATEGORY_SKU = {
     "switch": network_sku,
     "accesspoint": network_sku,
     "wlan_controller": network_sku,
+    # phần mềm bản quyền — không có mã part, khoá theo tên + số thiết bị + thời hạn
+    "software": software_sku,
 }
 
 

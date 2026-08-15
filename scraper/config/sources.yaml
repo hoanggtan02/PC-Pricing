@@ -353,3 +353,22 @@ categories:
       phongvu: "https://phongvu.vn/c/may-chu-server"
       fptshop: "https://fptshop.com.vn/tim-kiem?s=server&page={page}"
 
+  # ── Phần mềm bản quyền (Windows/Office, diệt virus, đồ họa...) — dùng software_sku ──
+  # Không có mã part như phần cứng: định danh = tên sản phẩm + số thiết bị + thời hạn (Kaspersky
+  # 3 thiết bị 1 năm ≠ 5 thiết bị 1 năm — giá khác nhau thật, xem software_sku trong sku.py).
+  # Toàn bộ URL đối thủ dưới đây là CATEGORY PAGE thật (đã xác minh), không phải link tìm kiếm.
+  software:
+    tier: A
+    search_term: "phần mềm bản quyền"
+    name_match: "phần mềm|phan mem|bản quyền|ban quyen|diệt virus|diet virus|antivirus|\\boffice\\b|windows\\s*(10|11|server)?|kaspersky|bitdefender|\\beset\\b|norton|mcafee|bkav|adobe|winrar|\\bavg\\b|avast|autocad|vmware"
+    name_exclude: "^laptop|^màn hình|^man hinh|chuột|chuot|bàn phím|ban phim|tai nghe|loa \\b|ổ cứng|o cung|ram\\b|ssd\\b|router|switch|webcam|usb\\b"
+    tnc: "https://www.tnc.com.vn/phan-mem.html?p={page}"
+    paths:
+      phongvu:    "https://phongvu.vn/c/phan-mem"
+      anphat:     "https://www.anphatpc.com.vn/phan-mem_dm401.html"
+      gearvn:     "https://gearvn.com/collections/phan-mem"
+      fptshop:    "https://fptshop.com.vn/phan-mem"
+      memoryzone: "https://memoryzone.com.vn/phan-mem-ban-quyen"
+      tgdd:       "https://www.thegioididong.com/phan-mem"
+      cellphones: "https://cellphones.com.vn/phu-kien/may-tinh-laptop/phan-mem.html"
+      hacom:      "https://hacom.vn/phan-mem-ban-quyen"
