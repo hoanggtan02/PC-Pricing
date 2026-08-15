@@ -102,7 +102,17 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
     """Sử dụng nhiều chiến lược để trích xuất giá từ trang sản phẩm."""
     html = await page.content()
     
-    # 1. Thử lấy giá từ JSON-LD schema (rất phổ biến cho SEO)
+    # 1. JSON-LD schema — NGUỒN TIN TUYỆT ĐỐI. Trang tự khai báo giá này để phục vụ Google/SEO
+    # (Google Shopping, rich snippet...), nên đây được coi là giá CHÍNH XÁC NHẤT — kể cả khi giá
+    # đó là 0 (sản phẩm hết hàng/liên hệ). Một khi đã parse được offers.price, DỪNG NGAY và trả về
+    # thẳng — KHÔNG rơi xuống meta/CSS selector/regex bên dưới (những chiến lược đó chỉ nên chạy
+    # khi trang KHÔNG có JSON-LD hoặc JSON-LD không parse được).
+    #
+    # LƯU Ý quan trọng: dùng `offers.get("price") is not None` (KHÔNG dùng `if offers.get("price")`)
+    # — giá trị 0 là falsy trong Python nên check cũ đã VÔ TÌNH bỏ qua giá 0 hợp lệ và rơi xuống các
+    # chiến lược dự phòng, khiến trang có flash-sale/giá-liên-hệ bị đọc nhầm sang CSS selector giá
+    # thường. Cũng bỏ luôn ngưỡng `p > 1000`: ngưỡng đó chỉ hợp lý để lọc NHIỄU cho các chiến lược
+    # heuristic (CSS/regex), không áp dụng cho dữ liệu có cấu trúc mà ta đã quyết định tin tuyệt đối.
     try:
         scripts = await page.locator("script[type='application/ld+json']").all_inner_texts()
         for script_text in scripts:
@@ -113,13 +123,14 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
                         continue
                     if node.get("@type") == "Product" or "offers" in node:
                         offers = node.get("offers")
-                        if isinstance(offers, dict) and offers.get("price"):
-                            p = clean_price(str(offers["price"]))
-                            if p and p > 1000:
-                                return p
+                        price_raw = None
+                        if isinstance(offers, dict) and offers.get("price") is not None:
+                            price_raw = offers["price"]
                         elif isinstance(offers, list) and len(offers) > 0:
-                            p = clean_price(str(offers[0].get("price")))
-                            if p and p > 1000:
+                            price_raw = offers[0].get("price")
+                        if price_raw is not None:
+                            p = clean_price(str(price_raw))
+                            if p is not None:  # tin tuyệt đối — kể cả 0
                                 return p
             except Exception:
                 continue
@@ -286,19 +297,29 @@ async def scrape_source(
         # song và làm kết quả TỆ HƠN. Chỉ đợi thêm một nhịp ngắn rồi đọc lại là đủ trong đa số case.
         # Site "nặng" được thêm vài lượt đọc lại (thay vì chỉ 1) vì JS của nó cần nhiều thời gian
         # hơn để điền giá vào DOM khi bị dồn tải trên CI.
+        #
+        # QUAN TRỌNG: dùng `price is not None` để kiểm tra, KHÔNG dùng `if price:`. Từ khi JSON-LD
+        # được tin tuyệt đối (strategy 1 ở extract_price_generic), `price` có thể hợp lệ là 0 (schema
+        # báo hết hàng/liên hệ) — 0 là falsy trong Python nên check cũ sẽ coi đó là "chưa tìm thấy"
+        # và retry vô ích, rồi vẫn quay lại đúng 0 đó (hoặc rơi vào chiến lược khác cho ra giá SAI).
         extra_reads = 3 if is_slow else 1
         for _ in range(extra_reads):
-            if price:
+            if price is not None:
                 break
             await page.wait_for_timeout(1500 if is_slow else 1200)
             price = await extract_price_generic(page, competitor)
 
-        if price:
-            print(f"  ✅ {competitor} - {sku}: {price:,} VND")
+        if price is not None:
+            # Giá 0 từ schema = hết hàng/liên hệ — đúng quy ước price=0 -> in_stock=False đã dùng
+            # xuyên suốt hệ thống (xem discover_tnc.py, stock.stock_from_price()). KHÔNG được ghi
+            # price=0 với in_stock=True mặc định như cũ, nếu không dashboard sẽ hiện "giá 0đ, còn hàng".
+            in_stock = price > 0
+            flag = "" if in_stock else "  [SCHEMA GIÁ 0 — hết hàng/liên hệ]"
+            print(f"  ✅ {competitor} - {sku}: {price:,} VND{flag}")
             if not dry_run:
                 # Ghi giá vào DB
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, insert_price, client, sku, competitor, price)
+                await loop.run_in_executor(None, insert_price, client, sku, competitor, price, in_stock)
             return True
         else:
             print(f"  ❌ {competitor} - {sku}: Không tìm thấy giá trên trang ({url})")
