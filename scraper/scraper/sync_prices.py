@@ -25,6 +25,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from .config import is_old_listing_name
 from .db import deactivate_source, get_client, insert_price, fetch_active_sources
 from .proxy_pool import get_pool, is_proxy_error
+from .stock import is_out_of_stock
 
 CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa (mặc định cho mọi cửa hàng)
 
@@ -129,7 +130,18 @@ def extract_labeled_price(text: str) -> int | None:
     return None
 
 async def extract_price_generic(page: Page, competitor: str) -> int | None:
-    """Sử dụng nhiều chiến lược để trích xuất giá từ trang sản phẩm."""
+    """Sử dụng nhiều chiến lược để trích xuất giá từ trang sản phẩm.
+
+    QUAN TRỌNG — "Liên hệ"/hết hàng: nếu Ô GIÁ CHÍNH của sản phẩm (selector đặc thù của
+    competitor, strategy 3) chứa văn bản kiểu "Liên hệ"/"Hết hàng" thay vì một con số, đó là TÍN
+    HIỆU THẬT (sản phẩm hết hàng/báo giá riêng), KHÔNG PHẢI "chưa tìm thấy giá". Ta trả về 0 NGAY
+    LẬP TỨC và KHÔNG rơi xuống strategy 4 (regex quét toàn bộ HTML trang).
+    Lý do: trang chi tiết TNC luôn có thêm khối "Sản phẩm liên quan/tương tự", và những khối đó
+    dùng CHUNG class giá (.new-price/.product-price) hoặc có số tiền trong text ở đâu đó trên
+    trang. Nếu tiếp tục quét toàn trang sau khi đã biết sản phẩm CHÍNH là "Liên hệ", ta rất dễ
+    vớ nhầm giá của MỘT SẢN PHẨM KHÁC hiển thị cùng trang rồi ghi sai vào price_history — đúng bug
+    đã gặp trên production. Dừng ngay ở đây loại bỏ khả năng đó.
+    """
     html = await page.content()
     
     # 1. JSON-LD schema — NGUỒN TIN TUYỆT ĐỐI. Trang tự khai báo giá này để phục vụ Google/SEO
@@ -179,7 +191,7 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
     except Exception:
         pass
 
-    # 3. Lấy theo CSS Selector đặc thù của competitor
+    # 3. Lấy theo CSS Selector đặc thù của competitor (ô giá chính của TRANG SẢN PHẨM ĐANG XEM).
     selectors = SELECTORS.get(competitor, [".price-current", ".product-price", "[itemprop='price']"])
     for sel in selectors:
         try:
@@ -198,12 +210,20 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
                         p = clean_price(txt)
                         if p and p > 1000:
                             return p
+                        # "Liên hệ"/hết hàng NGAY TRONG ô giá chính — tín hiệu THẬT, không phải
+                        # "chưa tìm thấy". DỪNG NGAY, trả 0 (quy ước price=0 -> in_stock=False dùng
+                        # xuyên suốt hệ thống, xem stock_from_price()). KHÔNG rơi xuống strategy 4
+                        # (regex quét toàn trang) — nếu không sẽ vớ nhầm giá của SẢN PHẨM KHÁC hiển
+                        # thị trên cùng trang (sản phẩm liên quan/tương tự/combo kèm theo).
+                        if txt and is_out_of_stock(txt):
+                            return 0
         except Exception:
             continue
 
-    # 4. Thử tìm regex generic trên HTML
-    # Nhiều site đổi class giá nhưng vẫn giữ nhãn văn bản (HACOM/TNC/An Phát), hoặc dùng câu UI
-    # cố định thay cho nhãn (TGDD/ĐMX: "Giá tại <Tỉnh/Thành>" — xem extract_labeled_price()).
+    # 4. Thử tìm regex generic trên HTML — CHỈ còn chạy tới đây khi ô giá chính (strategy 3)
+    # KHÔNG hề khớp/không đọc được gì (không phải trường hợp "Liên hệ" đã bắt ở trên). Nhiều site
+    # đổi class giá nhưng vẫn giữ nhãn văn bản (HACOM/TNC/An Phát), hoặc dùng câu UI cố định thay
+    # cho nhãn (TGDD/ĐMX: "Giá tại <Tỉnh/Thành>" — xem extract_labeled_price()).
     # Thử body đã render trước, rồi đến HTML thô từ SSR.
     try:
         price = extract_labeled_price(await page.locator("body").inner_text())
@@ -329,9 +349,11 @@ async def scrape_source(
         # hơn để điền giá vào DOM khi bị dồn tải trên CI.
         #
         # QUAN TRỌNG: dùng `price is not None` để kiểm tra, KHÔNG dùng `if price:`. Từ khi JSON-LD
-        # được tin tuyệt đối (strategy 1 ở extract_price_generic), `price` có thể hợp lệ là 0 (schema
-        # báo hết hàng/liên hệ) — 0 là falsy trong Python nên check cũ sẽ coi đó là "chưa tìm thấy"
-        # và retry vô ích, rồi vẫn quay lại đúng 0 đó (hoặc rơi vào chiến lược khác cho ra giá SAI).
+        # được tin tuyệt đối (strategy 1 ở extract_price_generic) VÀ "Liên hệ" ở ô giá chính cũng
+        # được nhận diện và trả 0 ngay (strategy 3), `price` có thể hợp lệ là 0 (hết hàng/liên hệ
+        # THẬT) — 0 là falsy trong Python nên check cũ sẽ coi đó là "chưa tìm thấy" và retry vô ích,
+        # rồi vẫn quay lại đúng 0 đó (hoặc tệ hơn, có nguy cơ rơi vào chiến lược khác cho ra giá SAI
+        # nếu logic dừng sớm ở strategy 3 từng bị bỏ qua).
         extra_reads = 3 if is_slow else 1
         for _ in range(extra_reads):
             if price is not None:
@@ -340,11 +362,12 @@ async def scrape_source(
             price = await extract_price_generic(page, competitor)
 
         if price is not None:
-            # Giá 0 từ schema = hết hàng/liên hệ — đúng quy ước price=0 -> in_stock=False đã dùng
-            # xuyên suốt hệ thống (xem discover_tnc.py, stock.stock_from_price()). KHÔNG được ghi
-            # price=0 với in_stock=True mặc định như cũ, nếu không dashboard sẽ hiện "giá 0đ, còn hàng".
+            # Giá 0 (từ schema HOẶC từ tín hiệu "Liên hệ"/hết hàng ở ô giá chính) = hết hàng/liên
+            # hệ — đúng quy ước price=0 -> in_stock=False đã dùng xuyên suốt hệ thống (xem
+            # discover_tnc.py, stock.stock_from_price()). KHÔNG được ghi price=0 với in_stock=True
+            # mặc định như cũ, nếu không dashboard sẽ hiện "giá 0đ, còn hàng".
             in_stock = price > 0
-            flag = "" if in_stock else "  [SCHEMA GIÁ 0 — hết hàng/liên hệ]"
+            flag = "" if in_stock else "  [Liên hệ/hết hàng — không ghi nhầm giá SP khác]"
             print(f"  ✅ {competitor} - {sku}: {price:,} VND{flag}")
             if not dry_run:
                 # Ghi giá vào DB
