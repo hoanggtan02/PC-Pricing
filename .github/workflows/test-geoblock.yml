@@ -1,0 +1,32 @@
+name: Test geo-block (manual, no DB, no proxy)
+
+on:
+  workflow_dispatch:   # chỉ chạy tay từ tab Actions
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Test Phong Vu (direct, no proxy)
+        run: python test_geoblock_direct.py phongvu
+      - name: Test FPT Shop (direct, no proxy)
+        run: python test_geoblock_direct.py fptshop
+        if: always()
+      - name: Upload evidence (screenshots/html)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: geoblock-evidence
+          path: scraper/*.png
+          if-no-files-found: ignore
