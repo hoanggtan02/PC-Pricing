@@ -14,6 +14,10 @@ phẩm MỚI, không phải để cào lại giá của mọi sản phẩm đã 
 hàng ngày) đã cào đều đặn rồi. Vì vậy SKU nào ĐÃ có source ở competitor này (fetch_existing_source_skus)
 thì chỉ được refresh URL (upsert_sources), KHÔNG ghi thêm dòng price_history trùng lặp.
 
+DÙNG browser_session (KHÔNG dùng browser_page): trang này cần proxy VN, và một lượt khám phá có
+thể tốn nhiều phút (cuộn tải lazy-load). Nếu proxy hết hạn GIỮA lượt chạy, goto_with_retry() cần
+relaunch được browser với proxy khác NGAY — xem ghi chú "BUG ĐÃ SỬA" ở đầu browser.py.
+
 Cách dùng:
     python -m scraper.discover_phongvu --dry
     python -m scraper.discover_phongvu
@@ -25,7 +29,7 @@ import argparse
 import re
 import sys
 
-from .browser import browser_page, goto_with_retry
+from .browser import browser_session, goto_with_retry
 from .config import categories, name_exclude_re, name_match_re, resolve_url
 from .db import (
     ensure_competitor,
@@ -74,9 +78,14 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     if not list_url:
         return []
     results: list[dict] = []
-    with browser_page(use_proxy=True) as page:
-        if not goto_with_retry(page, list_url, PRICE_SELECTOR, label=COMPETITOR):
+    with browser_session(use_proxy=True) as session:
+        if not goto_with_retry(session, list_url, PRICE_SELECTOR, label=COMPETITOR):
             return results
+
+        # session.page có thể đã đổi (rebuild giữa chừng nếu proxy chết) — đọc LẠI sau
+        # goto_with_retry, rồi dùng biến `page` cục bộ cho phần còn lại (không có thêm điều hướng
+        # trang nào bên dưới nên không cần đọc lại session.page thêm lần nào nữa).
+        page = session.page
 
         # Cuộn để tải các card render trễ (lazy) cho đến khi số lượng ổn định.
         last, stable = -1, 0

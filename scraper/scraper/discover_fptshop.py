@@ -16,6 +16,12 @@ phẩm MỚI, không phải để cào lại giá của mọi sản phẩm đã 
 hàng ngày) đã cào đều đặn rồi. Vì vậy SKU nào ĐÃ có source ở competitor này (fetch_existing_source_skus)
 thì chỉ được refresh URL (upsert_sources), KHÔNG ghi thêm dòng price_history trùng lặp.
 
+DÙNG browser_session (KHÔNG dùng browser_page): trang này cần proxy VN và phân trang qua nhiều
+lần goto() — nếu proxy hết hạn GIỮA lượt phân trang, cần relaunch browser với proxy khác NGAY
+thay vì âm thầm coi đó là "đã hết trang" và cắt cụt category. Cả trang 1 lẫn các trang phân trang
+sau đều đi qua goto_with_retry(session, ...) để được hưởng cơ chế relaunch — xem ghi chú "BUG ĐÃ
+SỬA" ở đầu browser.py.
+
 Cách dùng:
     python -m scraper.discover_fptshop --dry
     python -m scraper.discover_fptshop
@@ -28,7 +34,7 @@ import re
 import sys
 
 from .brand import name_match_term
-from .browser import browser_page, goto_with_retry
+from .browser import browser_session, goto_with_retry
 from .config import categories, name_exclude_re, name_match_re, resolve_url
 from .db import (
     ensure_competitor,
@@ -104,23 +110,22 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
         return []
     results: list[dict] = []
     seen_urls: set[str] = set()
-    with browser_page(use_proxy=True) as page:
+    with browser_session(use_proxy=True) as session:
         for n in range(1, PAGE_CAP + 1):
-            # Một trang chậm (do proxy) không nên làm hỏng cả lượt chạy — giữ lại các trang đã thu
-            # thập được. Trang 1 được thử lại (hỏng là lỗi thật → 0 kết quả); trang 2+ hỏng chỉ nghĩa
-            # là đã hết trang nên dừng bình thường.
-            if n == 1:
-                if not goto_with_retry(
-                    page, url_tpl.format(page=n), CARD_SELECTOR,
-                    selector_timeout=15000, label=COMPETITOR,
-                ):
-                    break
-            else:
-                try:
-                    page.goto(url_tpl.format(page=n), wait_until="domcontentloaded", timeout=60000)
-                    page.wait_for_selector(CARD_SELECTOR, timeout=15000)
-                except Exception:
-                    break  # hết thời gian chờ / không có card
+            # Trang 1 được thử lại nhiều lần hơn (hỏng thật -> 0 kết quả); trang 2+ dùng ít lần
+            # thử hơn để việc "hết trang thật" (selector không tìm thấy dù trang tải OK, không
+            # phải lỗi proxy) vẫn được phát hiện nhanh, KHÔNG bị lẫn với lỗi proxy — cả hai đi qua
+            # goto_with_retry(session, ...) nên nếu là proxy chết, browser sẽ được RELAUNCH với
+            # proxy khác và thử lại thay vì bị coi nhầm là đã hết trang (bug cũ khi dùng
+            # try/except: break trực tiếp cho trang 2+).
+            ok = goto_with_retry(
+                session, url_tpl.format(page=n), CARD_SELECTOR,
+                attempts=3 if n == 1 else 2,
+                selector_timeout=15000, label=COMPETITOR,
+            )
+            if not ok:
+                break
+            page = session.page  # đọc LẠI — có thể vừa được relaunch trong goto_with_retry
             page.wait_for_timeout(2000)
 
             items = page.eval_on_selector_all(
