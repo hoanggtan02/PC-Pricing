@@ -477,7 +477,6 @@ async def worker(queue, browser, contexts: dict, dry_run, client, results):
     với proxy còn sống, rồi mới cào tiếp. Nhờ vậy một proxy hết hạn GIỮA lượt chạy không làm chết
     toàn bộ các source Phong Vũ/FPT Shop/TGĐĐ/CellphoneS còn lại trong hàng đợi.
     """
-    pool = get_pool()
     while True:
         source = await queue.get()
         if source is None:
@@ -488,6 +487,14 @@ async def worker(queue, browser, contexts: dict, dry_run, client, results):
         needs_proxy = competitor in PROXY_COMPETITORS
 
         if needs_proxy:
+            # get_pool() TỰ ĐỘNG TẢI danh sách proxy free từ ProxyScrape ngay khi được gọi lần đầu
+            # (không lazy — xem proxy_pool.get_pool()/_load_proxies()). Gọi vô điều kiện ở đầu hàm
+            # (như trước đây) khiến MỌI lượt sync — kể cả lượt CHỈ cào site không cần proxy như
+            # TGDD/An Phát/HACOM/GearVN/Memoryzone/Thành Nhân — đều tải về 20-30 proxy hoàn toàn vô
+            # ích (tốn thời gian + một request mạng thừa ra ProxyScrape). Chỉ gọi khi source NÀY
+            # thật sự cần proxy; lru_cache của get_pool() đảm bảo các worker/source cần proxy khác
+            # trong CÙNG lượt chạy vẫn dùng chung một pool đã tải, không tải lại nhiều lần.
+            pool = get_pool()
             live_proxy = pool.current()
             if live_proxy is None:
                 print(f"  ⚠️  Skip {competitor} - {source['product_sku']}: hết proxy sống trong "
@@ -615,7 +622,11 @@ async def run_sync(
         f"{c}={n}" for c, n in sorted(totals.items())
     ))
     proxy_needed = sorted(c for c in totals if c in PROXY_COMPETITORS)
-    pool = get_pool()
+    # get_pool() TỰ ĐỘNG TẢI danh sách proxy free từ ProxyScrape ngay khi được gọi (không lazy) —
+    # gọi vô điều kiện ở đây (như trước đây) từng khiến MỌI lượt sync, kể cả lượt chỉ cào site
+    # không cần proxy (TGDD/An Phát/HACOM/GearVN/Memoryzone/Thành Nhân...), đều tải về proxy vô
+    # ích. Chỉ gọi khi lượt chạy này THẬT SỰ có competitor cần proxy VN.
+    pool = get_pool() if proxy_needed else None
     if proxy_needed:
         print(f"Cửa hàng cần proxy VN: {', '.join(proxy_needed)} — {pool.status()}")
     if effective_concurrency != CONCURRENCY_LIMIT:
