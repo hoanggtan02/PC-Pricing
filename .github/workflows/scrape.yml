@@ -97,7 +97,7 @@ jobs:
       # Cache trình duyệt Chromium của Playwright — với ~30 leg chạy song song, mỗi leg tự tải lại
       # chromium sẽ tốn băng thông/thời gian lặp lại vô ích. Cache theo hash requirements.txt.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('scraper/requirements.txt') }}
@@ -147,7 +147,7 @@ jobs:
       # lỗi) vẫn được upload bình thường (chỉ thiếu khi cả leg crash trước khi tạo file, hiếm).
       - name: Upload timing data
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: timings-${{ matrix.id }}
           path: ${{ runner.temp }}/timings-${{ matrix.id }}.tsv
@@ -155,7 +155,7 @@ jobs:
           retention-days: 3
       - name: Upload failure data
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: failures-${{ matrix.id }}
           path: ${{ runner.temp }}/failures-${{ matrix.id }}.tsv

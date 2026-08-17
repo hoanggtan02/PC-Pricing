@@ -3,7 +3,7 @@ Cách dùng:
     python -m scraper.sync_prices                          # cào tất cả active sources, ghi vào Supabase
     python -m scraper.sync_prices --dry                     # cào và in ra, không ghi vào DB
     python -m scraper.sync_prices --competitor "GearVN"     # chỉ cào MỘT cửa hàng (job song song)
-    python -m scraper.sync_prices --skip-refresh            # không refresh cache cuối (dành cho job riêng)
+    python -m scraper.sync_prices --skip-refresh             # không refresh cache cuối (dành cho job riêng)
     python -m scraper.sync_prices --failures-file out.tsv   # ghi danh sách link cào lỗi ra file TSV
 """
 
@@ -26,19 +26,49 @@ from .config import is_old_listing_name
 from .db import deactivate_source, get_client, insert_price, fetch_active_sources
 from .proxy_pool import get_pool, is_proxy_error
 
-CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa
+CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa (mặc định cho mọi cửa hàng)
+
+# Override RIÊNG cho từng competitor — dùng khi 1 site cụ thể có dấu hiệu bị chặn/rate-limit
+# khi nhận nhiều request đồng thời từ cùng 1 IP runner CI (vd CellphoneS: gần như 100% SKU fail
+# "Không tìm thấy giá" trên CI dù trang thật vẫn có JSON-LD đầy đủ khi load tay/local). Nguyên
+# nhân chính đã xác định là IP (xem PROXY_COMPETITORS bên dưới), nhưng vẫn giữ giảm concurrency
+# này như một lớp phòng hờ bổ sung — không gây hại gì cho các cửa hàng khác.
+# Các cửa hàng KHÔNG có trong dict này vẫn dùng CONCURRENCY_LIMIT mặc định như cũ.
+PER_COMPETITOR_CONCURRENCY = {
+    "CellphoneS": 2,
+}
+
+
+def _concurrency_for(competitor: str | None) -> int:
+    """Số worker song song cho lượt chạy này. Khi lượt chạy CHỈ lo MỘT competitor (job matrix
+    theo cửa hàng, xem sync.yml) và competitor đó có override riêng, dùng giá trị thấp hơn.
+    Mọi trường hợp khác (nhiều competitor trong hàng đợi, hoặc competitor không có override)
+    giữ nguyên CONCURRENCY_LIMIT — không đổi hành vi của các cửa hàng khác."""
+    if competitor and competitor in PER_COMPETITOR_CONCURRENCY:
+        return PER_COMPETITOR_CONCURRENCY[competitor]
+    return CONCURRENCY_LIMIT
+
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-# ── Các competitor CHẶN IP ngoài Việt Nam (Cloudflare/geo-block) — BẮT BUỘC qua proxy VN.
+# ── Các competitor CHẶN IP ngoài Việt Nam (Cloudflare/geo-block/anti-bot) — BẮT BUỘC qua proxy VN.
 # Khớp đúng danh sách use_proxy=True trong browser.py / các discover_*.py tương ứng
-# (discover_phongvu.py, discover_fptshop.py, discover_tgdd.py). MỌI competitor khác (An Phát,
-# CellphoneS, HACOM, Thành Nhân, GearVN, Memoryzone) truy cập trực tiếp được — KHÔNG được ép qua
-# proxy, nếu không proxy hỏng/hết quota sẽ làm sập lây cả những site vốn không cần proxy
-# (ERR_TUNNEL_CONNECTION_FAILED hàng loạt dù URL hoàn toàn hợp lệ).
-PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop", "Thế Giới Di Động"}
+# (discover_phongvu.py, discover_fptshop.py, discover_tgdd.py).
+#
+# CellphoneS được THÊM VÀO ĐÂY (trước đây không có): test thực tế cho thấy cùng code, cùng
+# concurrency, chạy LOCAL (IP nhà mạng VN) thì 10/10 thành công, nhưng chạy trên GitHub Actions
+# (IP datacenter nước ngoài) thì gần như 100% SKU fail "Không tìm thấy giá trên trang" — dù trang
+# thật (kiểm tra tay) vẫn có JSON-LD đầy đủ giá. Đây là dấu hiệu IP-block/anti-bot theo dải IP
+# datacenter, chứ không phải do concurrency hay selector lỗi thời — cùng lớp vấn đề với FPT
+# Shop/Phong Vũ/TGĐĐ nên xử lý bằng proxy VN là hợp lý.
+#
+# MỌI competitor khác (An Phát, HACOM, Thành Nhân, GearVN, Memoryzone) truy cập trực tiếp được —
+# KHÔNG được ép qua proxy, nếu không proxy hỏng/hết quota sẽ làm sập lây cả những site vốn không
+# cần proxy (ERR_TUNNEL_CONNECTION_FAILED hàng loạt dù URL hoàn toàn hợp lệ).
+PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop", "Thế Giới Di Động", "CellphoneS"}
 
 # Timeout cho page.goto(). Site cần proxy VN được cấp timeout NGẮN HƠN (15s thay vì 30s mặc định):
 # khi một proxy đã chết/treo (không bao giờ trả lời), mỗi request qua nó chắc chắn ăn đủ timeout
@@ -367,7 +397,7 @@ async def worker(queue, browser, contexts: dict, dry_run, client, results):
     trong contexts["proxy_obj"] không. Nếu một worker khác vừa mark_dead() proxy đó (do lỗi ở
     source trước), current() trả về proxy KHÁC — worker này tự đóng context cũ, mở context mới
     với proxy còn sống, rồi mới cào tiếp. Nhờ vậy một proxy hết hạn GIỮA lượt chạy không làm chết
-    toàn bộ các source Phong Vũ/FPT Shop/TGĐĐ còn lại trong hàng đợi.
+    toàn bộ các source Phong Vũ/FPT Shop/TGĐĐ/CellphoneS còn lại trong hàng đợi.
     """
     pool = get_pool()
     while True:
@@ -497,7 +527,11 @@ async def run_sync(
     if limit:
         sources = sources[:limit]
 
-    print(f"Bắt đầu đồng bộ giá cho {len(sources)} sources (Concurrency: {CONCURRENCY_LIMIT})...")
+    # Concurrency cho lượt chạy này — mặc định CONCURRENCY_LIMIT, TRỪ các competitor có override
+    # riêng trong PER_COMPETITOR_CONCURRENCY (hiện chỉ CellphoneS) khi job chỉ lo riêng cửa hàng đó.
+    effective_concurrency = _concurrency_for(competitor)
+
+    print(f"Bắt đầu đồng bộ giá cho {len(sources)} sources (Concurrency: {effective_concurrency})...")
     totals = Counter(source["competitor"] for source in sources)
     print("Source active theo cửa hàng: " + ", ".join(
         f"{c}={n}" for c, n in sorted(totals.items())
@@ -506,11 +540,14 @@ async def run_sync(
     pool = get_pool()
     if proxy_needed:
         print(f"Cửa hàng cần proxy VN: {', '.join(proxy_needed)} — {pool.status()}")
+    if effective_concurrency != CONCURRENCY_LIMIT:
+        print(f"  ⚠️  Giảm concurrency xuống {effective_concurrency} cho '{competitor}' "
+              f"(nghi bị chặn/rate-limit khi nhận nhiều request đồng thời).")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
 
-        # Context KHÔNG proxy — dùng cho An Phát, CellphoneS, HACOM, Thành Nhân, GearVN, Memoryzone.
+        # Context KHÔNG proxy — dùng cho An Phát, HACOM, Thành Nhân, GearVN, Memoryzone.
         # Đây là context MẶC ĐỊNH cho gần hết source, nên proxy hỏng sẽ KHÔNG còn ảnh hưởng tới chúng.
         context_direct = await browser.new_context(
             user_agent=USER_AGENT,
@@ -547,7 +584,7 @@ async def run_sync(
         
         # Tạo worker tasks chạy song song
         tasks = []
-        for _ in range(CONCURRENCY_LIMIT):
+        for _ in range(effective_concurrency):
             task = asyncio.create_task(worker(queue, browser, contexts, dry_run, client, results))
             tasks.append(task)
             # Thêm tín hiệu dừng cho mỗi worker
