@@ -1,8 +1,11 @@
-"""Scraper khám phá giá Thế Giới Di Động (thegioididong.com) (Playwright + proxy Việt Nam).
+"""Scraper khám phá giá Thế Giới Di Động (thegioididong.com) (Playwright, không cần proxy).
 
-TGDĐ chặn theo vùng địa lý các IP ngoài Việt Nam — nhưng ở tầng TLS (reset kết nối), không phải
-HTTP 403. Proxy VN vượt qua được nên đoạn này định tuyến qua use_proxy=True. Trang danh sách
-được render phía server, nên các selector ổn định và sạch.
+TGDĐ TỪNG chặn theo vùng địa lý các IP ngoài Việt Nam ở tầng TLS (reset kết nối) — trước đây
+module này định tuyến qua proxy VN (use_proxy=True). Xác nhận lại (2026-08): TGDĐ không còn chặn
+IP ngoài VN, truy cập trực tiếp hoạt động bình thường — khớp với sync_prices.py (Mode B), vốn đã
+KHÔNG đưa "Thế Giới Di Động" vào PROXY_COMPETITORS từ trước. Bỏ proxy ở đây (use_proxy=False) để
+hai chế độ nhất quán, và bớt phụ thuộc vào proxy pool (vốn kém ổn định — xem proxy_pool.py) cho
+một site không còn cần nó. Trang danh sách được render phía server, nên các selector ổn định và sạch.
 
 Selector đã xác minh (DOM đã render):
     card  : li.item   (chứa một liên kết sản phẩm laptop)
@@ -78,7 +81,7 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     if not list_url:
         return []
     results: list[dict] = []
-    with browser_page(use_proxy=True) as page:
+    with browser_page(use_proxy=False) as page:
         if not goto_with_retry(page, list_url, f"{CARD_SELECTOR} .price", label=COMPETITOR):
             return results
 
@@ -172,7 +175,7 @@ def main() -> int:
     existing = fetch_existing_source_skus(client, COMPETITOR)
 
     print(
-        f"Discovering '{COMPETITOR}' (via VN proxy) — {args.category}/{args.brand}"
+        f"Discovering '{COMPETITOR}' — {args.category}/{args.brand}"
         f"{' (dry run)' if args.dry else ''}...\n"
     )
     found = discover(args.brand, args.category)

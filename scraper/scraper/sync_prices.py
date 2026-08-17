@@ -119,6 +119,29 @@ def clean_price(text: str) -> int | None:
     return int(digits) if digits else None
 
 
+def _price_value_to_int(price_raw) -> int | None:
+    """Chuyển một giá trị SỐ CHUẨN (JSON-LD offers.price, hoặc content của thẻ meta) thành int VND.
+
+    BUG THẬT (TGDD, phát hiện 2026-08 — "giá cào bị x10"): trước đây strategy 1/2 dùng
+    `clean_price(str(price_raw))`. clean_price() strip mọi ký tự không phải chữ số, coi "." là
+    dấu PHÂN CÁCH NGHÌN kiểu hiển thị VN ("20.990.000" -> "20990000") — đúng cho text hiển thị
+    trên trang. Nhưng offers.price của JSON-LD (và content của <meta>) là một SỐ THEO CHUẨN
+    schema.org/Open Graph: dấu "." ở đó LÀ dấu THẬP PHÂN, không phải phân cách nghìn. TGDD trả về
+    price dạng FLOAT TRÒN (vd 20990000.0); str(20990000.0) = "20990000.0" rồi bị clean_price()
+    nuốt luôn dấu chấm thập phân vào thành chuỗi số → "209900000" — GIÁ BỊ NHÂN 10 cho MỌI sản
+    phẩm TGDD (giá VND luôn là số tròn nên luôn dính ".0"), đúng triệu chứng báo cáo.
+
+    Parse ĐÚNG kiểu số (float) rồi ROUND về int — không strip ký tự. Dự phòng: nếu parse float
+    thất bại (giá trị dính ký hiệu tiền tệ/chuỗi lạ), rơi về clean_price() như cũ thay vì mất giá.
+    """
+    if price_raw is None:
+        return None
+    try:
+        return int(round(float(price_raw)))
+    except (TypeError, ValueError):
+        return clean_price(str(price_raw))
+
+
 def extract_labeled_price(text: str) -> int | None:
     """Lấy giá ngay sau nhãn giá chính, không lấy giá sản phẩm gợi ý."""
     patterns = (
@@ -186,7 +209,7 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
                         elif isinstance(offers, list) and len(offers) > 0:
                             price_raw = offers[0].get("price")
                         if price_raw is not None:
-                            p = clean_price(str(price_raw))
+                            p = _price_value_to_int(price_raw)
                             if p is not None:  # tin tuyệt đối — kể cả 0
                                 return p
             except Exception:
@@ -200,7 +223,10 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
             meta_el = page.locator(f"meta[property='{meta_name}'], meta[name='{meta_name}']")
             if await meta_el.count() > 0:
                 content = await meta_el.first.get_attribute("content")
-                p = clean_price(content)
+                # _price_value_to_int (không phải clean_price trần): content chuẩn Open Graph là
+                # SỐ THẬP PHÂN ("20990000.00" nghĩa là 20990000, KHÔNG PHẢI 2099000000) — cùng lớp
+                # bug "x10" đã sửa ở strategy 1 JSON-LD, xem _price_value_to_int().
+                p = _price_value_to_int(content)
                 if p and p > 1000:
                     return p
     except Exception:
