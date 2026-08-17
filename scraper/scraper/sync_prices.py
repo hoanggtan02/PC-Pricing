@@ -39,6 +39,15 @@ PER_COMPETITOR_CONCURRENCY = {
     "CellphoneS": 2,
 }
 
+# Ngưỡng GIÁ TỐI THIỂU hợp lệ. Không sản phẩm nào trong catalog (laptop, linh kiện, phụ kiện...)
+# có giá THẬT dưới mức này — VND rẻ nhất trong catalog vẫn là hàng trăm nghìn trở lên. Một giá
+# < 500đ hầu như chắc chắn là DỮ LIỆU RÁC: placeholder giá "0đ"/"1đ" site trả về khi hết hàng/lỗi
+# render, phần còn sót của một class giá bị parse nhầm ("giảm 5%" đọc thành "5"), v.v. — KHÔNG
+# PHẢI giá thật của bất kỳ sản phẩm nào. Coi tín hiệu này là HẾT HÀNG (đồng bộ với quy ước
+# price=0 -> in_stock=False đã dùng xuyên suốt hệ thống — xem stock.stock_from_price()), thay vì
+# ghi nhầm một mức giá vô nghĩa vào price_history khiến dashboard hiện "rẻ nhất thị trường: 5đ".
+MIN_VALID_PRICE = 500
+
 
 def _concurrency_for(competitor: str | None) -> int:
     """Số worker song song cho lượt chạy này. Khi lượt chạy CHỈ lo MỘT competitor (job matrix
@@ -157,6 +166,10 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
     # chiến lược dự phòng, khiến trang có flash-sale/giá-liên-hệ bị đọc nhầm sang CSS selector giá
     # thường. Cũng bỏ luôn ngưỡng `p > 1000`: ngưỡng đó chỉ hợp lý để lọc NHIỄU cho các chiến lược
     # heuristic (CSS/regex), không áp dụng cho dữ liệu có cấu trúc mà ta đã quyết định tin tuyệt đối.
+    # LƯU Ý: chính vì JSON-LD được tin tuyệt đối và KHÔNG lọc theo ngưỡng giá tối thiểu ở đây, một
+    # giá trị rác/nhỏ bất thường (vd site trả "1"/"100" do lỗi render) vẫn có thể lọt qua tới đây —
+    # ngưỡng MIN_VALID_PRICE được áp dụng SAU CÙNG ở scrape_source(), sau khi mọi chiến lược (kể
+    # cả chiến lược "tin tuyệt đối" này) đã chạy xong, để bắt được cả trường hợp này.
     try:
         scripts = await page.locator("script[type='application/ld+json']").all_inner_texts()
         for script_text in scripts:
@@ -364,10 +377,24 @@ async def scrape_source(
             price = await extract_price_generic(page, competitor)
 
         if price is not None:
-            # Giá 0 (từ schema HOẶC từ tín hiệu "Liên hệ"/hết hàng ở ô giá chính) = hết hàng/liên
-            # hệ — đúng quy ước price=0 -> in_stock=False đã dùng xuyên suốt hệ thống (xem
-            # discover_tnc.py, stock.stock_from_price()). KHÔNG được ghi price=0 với in_stock=True
-            # mặc định như cũ, nếu không dashboard sẽ hiện "giá 0đ, còn hàng".
+            # Giá RÁC dưới ngưỡng hợp lệ (MIN_VALID_PRICE): không sản phẩm nào trong catalog có
+            # giá thật thấp đến vậy — đây gần như chắc chắn là placeholder/lỗi parse, KHÔNG PHẢI
+            # giá thật. Coi là HẾT HÀNG giống tín hiệu "Liên hệ"/0 (đồng bộ quy ước price=0 ->
+            # in_stock=False), thay vì ghi một mức giá vô nghĩa vào price_history. Không áp dụng
+            # cho price == 0 (đã là "hết hàng" sẵn từ JSON-LD/"Liên hệ" ở trên) — chỉ bắt các giá
+            # RÁC KHÁC 0 nhưng vẫn quá nhỏ để là thật (vd 1, 100, 499).
+            if 0 < price < MIN_VALID_PRICE:
+                print(
+                    f"  ⚠️  {competitor} - {sku}: giá {price:,} VND < {MIN_VALID_PRICE}đ "
+                    f"— coi là dữ liệu rác, ghi nhận HẾT HÀNG thay vì giá này"
+                )
+                price = 0
+
+            # Giá 0 (từ schema HOẶC từ tín hiệu "Liên hệ"/hết hàng ở ô giá chính, HOẶC từ giá rác
+            # dưới ngưỡng vừa chuẩn hoá ở trên) = hết hàng/liên hệ — đúng quy ước price=0 ->
+            # in_stock=False đã dùng xuyên suốt hệ thống (xem discover_tnc.py, stock.stock_from_price()).
+            # KHÔNG được ghi price=0 với in_stock=True mặc định như cũ, nếu không dashboard sẽ hiện
+            # "giá 0đ, còn hàng".
             in_stock = price > 0
             flag = "" if in_stock else "  [Liên hệ/hết hàng — không ghi nhầm giá SP khác]"
             print(f"  ✅ {competitor} - {sku}: {price:,} VND{flag}")
