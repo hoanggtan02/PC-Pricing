@@ -69,7 +69,9 @@ USER_AGENT = (
 # MỌI competitor khác (An Phát, HACOM, Thành Nhân, GearVN, Memoryzone) truy cập trực tiếp được —
 # KHÔNG được ép qua proxy, nếu không proxy hỏng/hết quota sẽ làm sập lây cả những site vốn không
 # cần proxy (ERR_TUNNEL_CONNECTION_FAILED hàng loạt dù URL hoàn toàn hợp lệ).
-PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop"}
+# PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop"}
+
+PROXY_COMPETITORS: set[str] = set()
 
 # Timeout cho page.goto(). Site cần proxy VN được cấp timeout NGẮN HƠN (15s thay vì 30s mặc định):
 # khi một proxy đã chết/treo (không bao giờ trả lời), mỗi request qua nó chắc chắn ăn đủ timeout
