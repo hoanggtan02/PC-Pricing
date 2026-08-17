@@ -13,6 +13,13 @@ Các selector đã xác nhận (DOM sau khi render):
     name  : a.p-name           (href = URL sản phẩm, text của <h3> = tên)
     price : .p-price            (giá hiện tại; KHÔNG phải .p-old-price - giá gốc gạch ngang)
 
+MODE A (weekend discovery) — CHỈ GHI GIÁ CHO SKU MỚI: kịch bản này chạy cuối tuần để tìm sản
+phẩm MỚI, không phải để cào lại giá của mọi sản phẩm đã biết — giá đó Mode B (sync_prices, chạy
+hàng ngày) đã cào đều đặn rồi. Vì vậy SKU nào ĐÃ có source ở competitor này (fetch_existing_source_skus)
+thì chỉ được refresh URL (upsert_sources), KHÔNG check_stock lại và KHÔNG ghi thêm dòng
+price_history trùng lặp — điều này còn giúp job chạy nhanh hơn vì bỏ được bước check_stock
+(mỗi lần tải một trang sản phẩm) cho toàn bộ sku cũ.
+
 Cách dùng:
     python -m scraper.discover_anphat --dry
     python -m scraper.discover_anphat
@@ -31,7 +38,14 @@ from playwright.sync_api import sync_playwright
 from .brand import brand_of
 from .browser import assert_parsed, goto_with_retry
 from .config import categories, name_exclude_re, name_match_re, resolve_url
-from .db import ensure_competitor, fetch_catalog_skus, get_client, insert_prices, upsert_sources
+from .db import (
+    ensure_competitor,
+    fetch_catalog_skus,
+    fetch_existing_source_skus,
+    get_client,
+    insert_prices,
+    upsert_sources,
+)
 from .sku import derive_sku
 
 COMPETITOR = "An Phát PC"
@@ -233,29 +247,40 @@ def main() -> int:
         print("No tracked products yet. Run the TNC scraper first to populate the catalog.")
         return 0
 
+    # SKU nào đã có source ở An Phát -> đã được Mode B (daily sync) theo dõi giá. Chỉ ghi giá cho
+    # SKU MỚI (chưa có trong tập này); sku cũ chỉ refresh URL, KHÔNG check_stock lại (tốn thời gian).
+    existing = fetch_existing_source_skus(client, COMPETITOR)
+
     print(
         f"Discovering '{COMPETITOR}' — {args.category}/{args.brand}"
         f"{' (dry run)' if args.dry else ''}...\n"
     )
     found = discover(args.brand, args.category)
-    print(f"{len(found)} unique product(s) parsed; matching against {len(tracked)} TNC SKU(s).\n")
+    print(
+        f"{len(found)} unique product(s) parsed; matching against {len(tracked)} TNC SKU(s), "
+        f"{len(existing)} đã có source (daily sync lo giá).\n"
+    )
 
     category_label = args.category.capitalize()
     fallback_url = BRANDS[args.brand] if args.category == "laptop" else None
-    # Chỉ giữ lại các sản phẩm đã khớp, sau đó kiểm tra tồn kho cho riêng chúng (mỗi cái tải một trang).
+    # Chỉ giữ lại các sản phẩm đã khớp.
     matched = [
         {**item, "sku": derive_sku(item["name"], item.get("url"), category_label)}
         for item in found
         if derive_sku(item["name"], item.get("url"), category_label) in tracked
     ]
-    stock = check_stock([m["url"] for m in matched if m.get("url")])
+    new_items = [m for m in matched if m["sku"] not in existing]
+    known_items = [m for m in matched if m["sku"] in existing]
+
+    # Chỉ kiểm tồn kho (mỗi cái tải một trang) cho SKU MỚI — SKU cũ daily sync tự lo.
+    stock = check_stock([m["url"] for m in new_items if m.get("url")])
 
     source_rows, price_rows = [], []
-    for item in matched:
+    for item in new_items:
         sku = item["sku"]
         in_stock = stock.get(item.get("url"), True)
         flag = "" if in_stock else "  [OUT OF STOCK]"
-        print(f"- {sku}: {item['price']:,} VND{flag}  ({item['name'][:50]})")
+        print(f"- [MỚI] {sku}: {item['price']:,} VND{flag}  ({item['name'][:50]})")
         source_rows.append(
             {"product_sku": sku, "competitor": COMPETITOR, "url": item.get("url") or fallback_url}
         )
@@ -263,11 +288,20 @@ def main() -> int:
             {"product_sku": sku, "competitor": COMPETITOR, "price": item["price"], "in_stock": in_stock}
         )
 
+    # SKU cũ: chỉ refresh URL, KHÔNG ghi giá/tồn kho lại.
+    for item in known_items:
+        source_rows.append(
+            {"product_sku": item["sku"], "competitor": COMPETITOR, "url": item.get("url") or fallback_url}
+        )
+
     if not args.dry:
         upsert_sources(client, source_rows)
         insert_prices(client, price_rows)
 
-    print(f"\nDone. {len(price_rows)} TNC-catalog SKU(s) matched on {COMPETITOR}.")
+    print(
+        f"\nDone. {len(price_rows)} SKU MỚI được ghi giá trên {COMPETITOR} "
+        f"({len(known_items)} SKU cũ chỉ refresh URL, không ghi giá lại)."
+    )
     return 0
 
 

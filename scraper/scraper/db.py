@@ -46,6 +46,41 @@ def fetch_catalog_skus(client: Client, category: str | None = None) -> set[str]:
     return skus
 
 
+def fetch_existing_source_skus(client: Client, competitor: str) -> set[str]:
+    """SKU nào của `competitor` ĐÃ có source trong DB (bất kể active hay không).
+
+    Vì sao cần: Mode A (scrape.yml, chạy cuối tuần) trước đây ghi giá cho MỌI SKU khớp được, kể cả
+    những SKU đã có source từ trước — tức là ĐÃ được Mode B (sync.yml, chạy hàng ngày) cào giá đều
+    đặn rồi. Kết quả: mỗi cuối tuần price_history bị ghi thêm một dòng TRÙNG LẶP hoàn toàn không cần
+    thiết cho toàn bộ catalog cũ, tốn cả thời gian chạy CI (check_stock/goto từng trang) lẫn dung
+    lượng bảng price_history.
+
+    Dùng tập SKU này ở Mode A để CHỈ ghi price_history cho SKU MỚI phát hiện (chưa từng có source ở
+    competitor này) — sku cũ chỉ cần refresh URL (qua upsert_sources), giá của nó daily sync đã lo.
+
+    Không phân biệt active/inactive: một source từng bị tắt (is_manual_url hoặc hàng cũ/demo) vẫn
+    tính là "đã biết", để Mode A không cào giá lại cho nó chỉ vì nó đang bị tắt tạm thời.
+    """
+    skus: set[str] = set()
+    page = 0
+    size = 1000
+    while True:
+        rows = (
+            client.table("sources")
+            .select("product_sku")
+            .eq("competitor", competitor)
+            .range(page * size, page * size + size - 1)
+            .execute()
+            .data
+            or []
+        )
+        skus.update(r["product_sku"] for r in rows)
+        if len(rows) < size:
+            break
+        page += 1
+    return skus
+
+
 def fetch_active_sources(client: Client, competitor: str | None = None) -> list[dict]:
     """Trả về các source đang active kèm join với sản phẩm tương ứng, để biết cần scrape gì.
 
