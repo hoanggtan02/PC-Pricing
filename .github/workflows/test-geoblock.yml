@@ -1,7 +1,7 @@
 name: Test geo-block (manual, no DB, no proxy)
 
 on:
-  workflow_dispatch:   # chỉ chạy tay từ tab Actions
+  workflow_dispatch:   
 
 jobs:
   test:
