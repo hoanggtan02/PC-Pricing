@@ -1,25 +1,25 @@
 """Pool nhiều proxy VN với tự động chuyển proxy khác khi proxy hiện tại hết hạn/lỗi.
 
 Vì sao cần: PROXY_SERVER cũ chỉ khai báo MỘT proxy — hết hạn là mọi scraper cần proxy VN
-(FPT Shop, Phong Vũ, TGĐĐ) chết theo cả lượt chạy. Module này đọc một DANH SÁCH proxy từ
-PROXY_LIST, và khi một proxy bị lỗi kết nối (hết hạn/sập), tự đánh dấu "dead" trong lượt chạy
-này rồi chuyển sang proxy kế tiếp còn sống — không cần sửa code scraper, không cần chờ người
-canh log rồi đổi tay.
+(FPT Shop, Phong Vũ, TGĐĐ) chết theo cả lượt chạy. Module này đọc một DANH SÁCH proxy, và khi một
+proxy bị lỗi kết nối (hết hạn/sập), tự đánh dấu "dead" trong lượt chạy này rồi chuyển sang proxy kế
+tiếp còn sống — không cần sửa code scraper, không cần chờ người canh log rồi đổi tay.
 
-Format PROXY_LIST (.env / GitHub Secret), mỗi proxy cách nhau ";" (cũng chấp nhận "," hoặc xuống
-dòng — tiện khi dán một danh sách IP:PORT thô từ nhà cung cấp):
+NGUỒN proxy, theo thứ tự ưu tiên (xem _load_proxies()):
+  1. TỰ ĐỘNG TẢI danh sách proxy VN MIỄN PHÍ từ ProxyScrape mỗi lần chạy (BẬT SẴN, không cần cấu
+     hình gì thêm) — xem DEFAULT_PROXYSCRAPE_URL. Tắt bằng PROXY_AUTO_FETCH=0; đổi nguồn bằng
+     PROXY_SCRAPE_URL. Vì đây là proxy IP trần miễn phí (không đảm bảo chất lượng, nhiều IP chết),
+     cơ chế rotate/mark_dead bên dưới sẽ tự loại các proxy chết trong lúc chạy, y hệt như với proxy
+     trả phí — không cần code riêng.
+  2. PROXY_SERVER đơn lẻ (tương thích ngược) — dự phòng khi tự tải lỗi/rỗng hoặc bị tắt.
 
-    # Không cần username/password (proxy IP trần, mỗi IP tự có port riêng — dạng phổ biến nhất):
-    PROXY_LIST=116.96.32.160:8080;113.160.132.26:3128;14.241.231.13:1080
+  (Đã bỏ PROXY_LIST tĩnh — không dùng, luôn để trống trong thực tế. Nếu sau này cần dán tay một
+  danh sách proxy trả phí, dùng lại _parse_proxy_list()/PROXY_SCRAPE_URL trỏ tới một endpoint tự
+  host trả về đúng format text "ip:port" mỗi dòng, thay vì thêm lại biến môi trường riêng.)
 
-    # Có username/password (thêm "|user|pass" sau mỗi host:port):
-    PROXY_LIST=http://host1:port|user1|pass1;http://host2:port|user2|pass2
-
-Không cần ghi tiền tố "http://" — nếu thiếu, module tự thêm vào (Playwright bắt buộc phải có
-scheme trong proxy.server).
-
-Tương thích ngược: nếu PROXY_LIST trống, dùng PROXY_SERVER/PROXY_USERNAME/PROXY_PASSWORD cũ
-làm danh sách 1 proxy.
+Vì get_pool() cache theo process (lru_cache), việc "tự động tải mỗi lần cào" tự nhiên xảy ra:
+mỗi lượt chạy scraper (mỗi job CI, mỗi lần chạy `python -m scraper...`) là MỘT process mới nên sẽ
+tự gọi lại ProxyScrape để lấy danh sách MỚI, không cần cache thủ công giữa các lượt chạy.
 
 Cách dùng:
     from .proxy_pool import get_pool
@@ -37,6 +37,7 @@ import os
 import re
 import threading
 
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -165,10 +166,48 @@ def _parse_proxy_list(raw: str) -> list[dict]:
     return proxies
 
 
+# URL mặc định lấy danh sách proxy VN MIỄN PHÍ từ ProxyScrape — trả về TEXT THUẦN, mỗi dòng một
+# proxy dạng "ip:port" (không kèm scheme/username/password). Format này đã tương thích thẳng với
+# _parse_proxy_list()/_normalize_server() ở trên — không cần code parse riêng.
+# Đổi nguồn (vd đổi country, đổi sang site free-proxy khác) qua biến môi trường PROXY_SCRAPE_URL.
+DEFAULT_PROXYSCRAPE_URL = (
+    "https://api.proxyscrape.com/v4/free-proxy-list/get"
+    "?request=display_proxies&proxy_format=ipport&format=text&country=vn"
+)
+
+
+def _fetch_remote_proxy_list(url: str, timeout: float = 10.0) -> str:
+    """Tải danh sách proxy thô (text, mỗi dòng "ip:port") từ một API công khai (mặc định
+    ProxyScrape). KHÔNG raise khi lỗi (mạng chập chờn / API rate-limit / timeout) — trả về chuỗi
+    rỗng để _load_proxies() lặng lẽ rơi xuống PROXY_SERVER (nếu có cấu hình) thay vì làm sập cả
+    lượt chạy CI chỉ vì một API bên thứ ba tạm thời không phản hồi.
+    """
+    try:
+        resp = httpx.get(url, timeout=timeout, follow_redirects=True)
+        resp.raise_for_status()
+        return resp.text
+    except Exception as e:
+        print(f"  ⚠️  Không tải được danh sách proxy tự động ({url}): {e}")
+        return ""
+
+
+def _truthy_env(name: str, default: str = "1") -> bool:
+    return os.environ.get(name, default).strip().lower() not in ("0", "false", "no", "")
+
+
 def _load_proxies() -> list[dict]:
-    raw_list = os.environ.get("PROXY_LIST", "").strip()
-    if raw_list:
-        return _parse_proxy_list(raw_list)
+    """Xem thứ tự ưu tiên nguồn proxy ở docstring đầu file. Tóm tắt: tự động tải từ ProxyScrape
+    (bật sẵn) > PROXY_SERVER đơn lẻ (tương thích ngược, dự phòng)."""
+    # Tự động tải danh sách proxy free — BẬT SẴN, không cần cấu hình gì thêm. Tắt bằng
+    # PROXY_AUTO_FETCH=0 (vd nếu muốn quay lại hành vi cũ "không proxy khi thiếu PROXY_LIST").
+    if _truthy_env("PROXY_AUTO_FETCH"):
+        url = os.environ.get("PROXY_SCRAPE_URL", "").strip() or DEFAULT_PROXYSCRAPE_URL
+        raw_auto = _fetch_remote_proxy_list(url)
+        proxies = _parse_proxy_list(raw_auto) if raw_auto else []
+        if proxies:
+            print(f"  ℹ️  Đã tải {len(proxies)} proxy (miễn phí, tự động) từ ProxyScrape.")
+            return proxies
+        print("  ⚠️  Danh sách proxy tự động rỗng/lỗi — thử PROXY_SERVER (nếu có cấu hình).")
 
     # Tương thích ngược: PROXY_SERVER đơn lẻ -> danh sách 1 proxy.
     server = os.environ.get("PROXY_SERVER", "").strip()
@@ -187,5 +226,9 @@ def _load_proxies() -> list[dict]:
 def get_pool() -> ProxyPool:
     """Pool dùng chung cho cả lượt chạy (một process). lru_cache đảm bảo mọi scraper/worker
     trong cùng process CHIA SẺ cùng một trạng thái "proxy nào đã chết" — proxy hết hạn ở
-    discover_fptshop sẽ không bị dùng lại ở discover_phongvu trong cùng lượt chạy."""
+    discover_fptshop sẽ không bị dùng lại ở discover_phongvu trong cùng lượt chạy.
+
+    Vì cache theo PROCESS (không phải theo ngày/theo file), việc tự động tải proxy mới xảy ra
+    tự nhiên mỗi khi có một process Python mới chạy (mỗi job CI, mỗi lần gọi
+    `python -m scraper.sync_prices` / `python -m scraper.discover_*`)."""
     return ProxyPool(_load_proxies())
