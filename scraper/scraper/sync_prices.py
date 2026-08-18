@@ -55,7 +55,7 @@ CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa (mặc định ch
 # có thể đủ để trang tracker-nặng này chưa kịp render xong giá lúc page.content() được gọi. Hạ
 # xuống 3 để giảm áp lực, tương tự hướng đã áp dụng cho Thành Nhân.
 PER_COMPETITOR_CONCURRENCY = {
-    "CellphoneS": 2,
+    "CellphoneS": 4,
     "Thành Nhân": 6,
     "An Phát PC": 3,
 }
@@ -133,6 +133,43 @@ SELECTORS = {
     "Thế Giới Di Động": [".box-price-present", ".price-current"]
 }
 
+# ── Tồn kho từ JSON-LD (offers.availability) ────────────────────────────────────────────────
+# Một số cửa hàng (xác nhận thật: CellphoneS) vẫn niêm yết GIÁ bình thường trong offers.price ngay
+# cả khi sản phẩm đang hết hàng — tín hiệu hết hàng THẬT nằm ở field RIÊNG offers.availability
+# trong CÙNG khối JSON-LD (ví dụ thực tế lấy từ trang sản phẩm CellphoneS 2026-08:
+# {"price":"26990000", ..., "availability":"https://schema.org/OutOfStock"} — sản phẩm này hiển thị
+# badge "TẠM HẾT HÀNG" ở khối #boxRegisterProduct trên trang, HOÀN TOÀN TÁCH BIỆT khỏi ô giá).
+#
+# Trước đây extract_price_generic() chỉ đọc offers.price rồi trả về NGAY (JSON-LD được tin tuyệt
+# đối — xem comment trong hàm), bỏ qua hẳn offers.availability nằm cùng object đó -> sản phẩm hết
+# hàng thật bị ghi in_stock=True sai. Sửa: đọc availability CÙNG LÚC với price (không tốn thêm
+# request/DOM query nào — dữ liệu đã có sẵn trong JSON đang parse), map sang bool qua
+# _availability_to_in_stock(), và ƯU TIÊN nó hơn suy luận "price > 0" cũ khi có giá trị rõ ràng.
+#
+# Đây là dữ liệu CÓ CẤU TRÚC theo chuẩn schema.org (không phải CSS class dễ đổi theo redesign) nên
+# áp dụng được cho MỌI competitor có JSON-LD chuẩn, không chỉ CellphoneS — competitor nào không
+# khai availability (hoặc giá trị lạ) sẽ nhận None và rơi về hành vi suy-từ-giá như cũ, không đổi.
+_AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued"}
+_AVAILABILITY_IN = {
+    "instock", "limitedavailability", "onlineonly", "presale", "preorder", "backorder",
+}
+
+
+def _availability_to_in_stock(availability_raw) -> bool | None:
+    """Map giá trị offers.availability (URL schema.org như "https://schema.org/OutOfStock", hoặc
+    chuỗi trần "OutOfStock") sang in_stock. Trả None nếu thiếu/không nhận diện được — caller khi
+    đó suy in_stock từ giá như quy ước cũ (KHÔNG coi None là hết hàng, tránh gắn cờ sai khi site
+    dùng giá trị availability lạ hoặc không khai báo field này)."""
+    if not availability_raw:
+        return None
+    val = str(availability_raw).rstrip("/").rsplit("/", 1)[-1].strip().lower()
+    if val in _AVAILABILITY_OUT:
+        return False
+    if val in _AVAILABILITY_IN:
+        return True
+    return None
+
+
 def clean_price(text: str) -> int | None:
     if not text:
         return None
@@ -184,26 +221,41 @@ def extract_labeled_price(text: str) -> int | None:
             return price
     return None
 
-async def extract_price_generic(page: Page, competitor: str) -> int | None:
-    """Sử dụng nhiều chiến lược để trích xuất giá từ trang sản phẩm.
+
+async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None, bool | None]:
+    """Sử dụng nhiều chiến lược để trích xuất giá (và, khi có, tín hiệu tồn kho) từ trang sản phẩm.
+
+    Trả về (price, in_stock_from_availability):
+      - price: giá VND tìm được, hoặc None nếu không tìm thấy ở bất kỳ chiến lược nào.
+      - in_stock_from_availability: bool nếu JSON-LD khai báo rõ offers.availability (xem
+        _availability_to_in_stock/_AVAILABILITY_OUT/_AVAILABILITY_IN ở đầu file), ngược lại None
+        (chưa biết — caller tự suy in_stock từ price > 0 như quy ước cũ).
 
     QUAN TRỌNG — "Liên hệ"/hết hàng: nếu Ô GIÁ CHÍNH của sản phẩm (selector đặc thù của
     competitor, strategy 3) chứa văn bản kiểu "Liên hệ"/"Hết hàng" thay vì một con số, đó là TÍN
     HIỆU THẬT (sản phẩm hết hàng/báo giá riêng), KHÔNG PHẢI "chưa tìm thấy giá". Ta trả về 0 NGAY
-    LẬP TỨC và KHÔNG rơi xuống strategy 4 (regex quét toàn bộ HTML trang).
+    LẬP TỨC (kèm in_stock=False dứt khoát) và KHÔNG rơi xuống strategy 4 (regex quét toàn bộ HTML
+    trang).
     Lý do: trang chi tiết TNC luôn có thêm khối "Sản phẩm liên quan/tương tự", và những khối đó
     dùng CHUNG class giá (.new-price/.product-price) hoặc có số tiền trong text ở đâu đó trên
     trang. Nếu tiếp tục quét toàn trang sau khi đã biết sản phẩm CHÍNH là "Liên hệ", ta rất dễ
     vớ nhầm giá của MỘT SẢN PHẨM KHÁC hiển thị cùng trang rồi ghi sai vào price_history — đúng bug
     đã gặp trên production. Dừng ngay ở đây loại bỏ khả năng đó.
+
+    QUAN TRỌNG — giá vẫn niêm yết nhưng THỰC TẾ hết hàng (CellphoneS): một số trang giữ nguyên
+    offers.price bình thường trong JSON-LD dù sản phẩm đang tạm hết hàng; tín hiệu hết hàng thật
+    nằm ở offers.availability (CÙNG object với price, đọc được miễn phí — không cần thêm DOM
+    query/selector riêng). Xem khối comment ở đầu file. Ta đọc field này ngay trong strategy 1 và
+    trả kèm theo price, để caller (scrape_source) ưu tiên nó hơn suy luận "price > 0".
     """
     html = await page.content()
-    
-    # 1. JSON-LD schema — NGUỒN TIN TUYỆT ĐỐI. Trang tự khai báo giá này để phục vụ Google/SEO
-    # (Google Shopping, rich snippet...), nên đây được coi là giá CHÍNH XÁC NHẤT — kể cả khi giá
-    # đó là 0 (sản phẩm hết hàng/liên hệ). Một khi đã parse được offers.price, DỪNG NGAY và trả về
-    # thẳng — KHÔNG rơi xuống meta/CSS selector/regex bên dưới (những chiến lược đó chỉ nên chạy
-    # khi trang KHÔNG có JSON-LD hoặc JSON-LD không parse được).
+    availability_stock: bool | None = None
+
+    # 1. JSON-LD schema — NGUỒN TIN TUYỆT ĐỐI cho GIÁ. Trang tự khai báo giá này để phục vụ Google/
+    # SEO (Google Shopping, rich snippet...), nên đây được coi là giá CHÍNH XÁC NHẤT — kể cả khi
+    # giá đó là 0 (sản phẩm hết hàng/liên hệ). Một khi đã parse được offers.price, DỪNG NGAY và
+    # trả thẳng — KHÔNG rơi xuống meta/CSS selector/regex bên dưới (những chiến lược đó chỉ nên
+    # chạy khi trang KHÔNG có JSON-LD hoặc JSON-LD không parse được).
     #
     # LƯU Ý quan trọng: dùng `offers.get("price") is not None` (KHÔNG dùng `if offers.get("price")`)
     # — giá trị 0 là falsy trong Python nên check cũ đã VÔ TÌNH bỏ qua giá 0 hợp lệ và rơi xuống các
@@ -225,14 +277,22 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
                     if node.get("@type") == "Product" or "offers" in node:
                         offers = node.get("offers")
                         price_raw = None
+                        offer_obj = None
                         if isinstance(offers, dict) and offers.get("price") is not None:
-                            price_raw = offers["price"]
+                            price_raw, offer_obj = offers["price"], offers
                         elif isinstance(offers, list) and len(offers) > 0:
-                            price_raw = offers[0].get("price")
+                            price_raw, offer_obj = offers[0].get("price"), offers[0]
+                        # Đọc availability CÙNG LÚC với price — cùng object, không tốn thêm truy
+                        # vấn nào. Ghi lại NGAY CẢ KHI price_raw rỗng, phòng trường hợp node có
+                        # availability nhưng lại thiếu price hợp lệ (hiếm, nhưng an toàn hơn).
+                        if offer_obj is not None:
+                            mapped = _availability_to_in_stock(offer_obj.get("availability"))
+                            if mapped is not None:
+                                availability_stock = mapped
                         if price_raw is not None:
                             p = _price_value_to_int(price_raw)
                             if p is not None:  # tin tuyệt đối — kể cả 0
-                                return p
+                                return p, availability_stock
             except Exception:
                 continue
     except Exception:
@@ -249,7 +309,7 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
                 # bug "x10" đã sửa ở strategy 1 JSON-LD, xem _price_value_to_int().
                 p = _price_value_to_int(content)
                 if p and p > 1000:
-                    return p
+                    return p, availability_stock
     except Exception:
         pass
 
@@ -267,18 +327,19 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
                         raw_price = await el.get_attribute("data-price")
                         p = clean_price(raw_price or "")
                         if p and p > 1000:
-                            return p
+                            return p, availability_stock
                         txt = await el.inner_text()
                         p = clean_price(txt)
                         if p and p > 1000:
-                            return p
+                            return p, availability_stock
                         # "Liên hệ"/hết hàng NGAY TRONG ô giá chính — tín hiệu THẬT, không phải
-                        # "chưa tìm thấy". DỪNG NGAY, trả 0 (quy ước price=0 -> in_stock=False dùng
-                        # xuyên suốt hệ thống, xem stock_from_price()). KHÔNG rơi xuống strategy 4
-                        # (regex quét toàn trang) — nếu không sẽ vớ nhầm giá của SẢN PHẨM KHÁC hiển
-                        # thị trên cùng trang (sản phẩm liên quan/tương tự/combo kèm theo).
+                        # "chưa tìm thấy". DỪNG NGAY, trả 0 kèm in_stock=False DỨT KHOÁT (quy ước
+                        # price=0 -> in_stock=False dùng xuyên suốt hệ thống, xem stock_from_price()).
+                        # KHÔNG rơi xuống strategy 4 (regex quét toàn trang) — nếu không sẽ vớ nhầm
+                        # giá của SẢN PHẨM KHÁC hiển thị trên cùng trang (sản phẩm liên quan/tương
+                        # tự/combo kèm theo).
                         if txt and is_out_of_stock(txt):
-                            return 0
+                            return 0, False
         except Exception:
             continue
 
@@ -290,19 +351,20 @@ async def extract_price_generic(page: Page, competitor: str) -> int | None:
     try:
         price = extract_labeled_price(await page.locator("body").inner_text())
         if price:
-            return price
+            return price, availability_stock
     except Exception:
         pass
 
     price = extract_labeled_price(html)
     if price:
-        return price
+        return price, availability_stock
 
     match = re.search(r'property="product:price:amount"\s+content="(\d+)"', html)
     if match:
-        return int(match.group(1))
-        
-    return None
+        return int(match.group(1)), availability_stock
+
+    return None, availability_stock
+
 
 def _price_wait_selector(competitor: str) -> str:
     """Selector CSS gộp (OR) để wait_for_selector — bất kỳ selector giá nào của competitor này
@@ -408,7 +470,7 @@ async def scrape_source(
                 _record_failure(failures, competitor, sku, url, f"Hàng cũ/demo, đã tắt source ({title[:60]})")
             return False
 
-        price = await extract_price_generic(page, competitor)
+        price, availability_stock = await extract_price_generic(page, competitor)
 
         # Không tìm thấy giá ở lần đọc đầu — có thể trang tải chậm bất thường (CPU/mạng chia tải
         # giữa nhiều tab song song) chứ chưa chắc trang thật sự thiếu giá. Thử lại trên CÙNG trang
@@ -429,7 +491,7 @@ async def scrape_source(
             if price is not None:
                 break
             await page.wait_for_timeout(1500 if is_slow else 1200)
-            price = await extract_price_generic(page, competitor)
+            price, availability_stock = await extract_price_generic(page, competitor)
 
         if price is not None:
             # Giá RÁC dưới ngưỡng hợp lệ (MIN_VALID_PRICE): không sản phẩm nào trong catalog có
@@ -444,13 +506,16 @@ async def scrape_source(
                     f"— coi là dữ liệu rác, ghi nhận HẾT HÀNG thay vì giá này"
                 )
                 price = 0
+                availability_stock = False
 
-            # Giá 0 (từ schema HOẶC từ tín hiệu "Liên hệ"/hết hàng ở ô giá chính, HOẶC từ giá rác
-            # dưới ngưỡng vừa chuẩn hoá ở trên) = hết hàng/liên hệ — đúng quy ước price=0 ->
-            # in_stock=False đã dùng xuyên suốt hệ thống (xem discover_tnc.py, stock.stock_from_price()).
-            # KHÔNG được ghi price=0 với in_stock=True mặc định như cũ, nếu không dashboard sẽ hiện
-            # "giá 0đ, còn hàng".
-            in_stock = price > 0
+            # in_stock: ƯU TIÊN tín hiệu availability đọc từ JSON-LD (offers.availability) khi có
+            # — đây là dữ liệu THẬT do chính trang tự khai, và có thể là False dù price > 0 (site
+            # vẫn niêm yết giá cũ trong khi sản phẩm đang tạm hết hàng — xác nhận thật trên
+            # CellphoneS: price=26990000 nhưng availability=OutOfStock, badge "TẠM HẾT HÀNG" hiển
+            # thị RIÊNG ở #boxRegisterProduct, tách khỏi ô giá nên các chiến lược đọc giá không
+            # bao giờ thấy được nếu không đọc availability). Không có tín hiệu rõ ràng
+            # (availability_stock is None) -> suy in_stock từ giá như quy ước cũ.
+            in_stock = availability_stock if availability_stock is not None else price > 0
             flag = "" if in_stock else "  [Liên hệ/hết hàng — không ghi nhầm giá SP khác]"
             print(f"  ✅ {competitor} - {sku}: {price:,} VND{flag}")
             if not dry_run:
