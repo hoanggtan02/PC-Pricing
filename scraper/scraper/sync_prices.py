@@ -116,6 +116,13 @@ GOTO_TIMEOUT_MS = {
 }
 
 # Selector lấy giá cho từng đối thủ (ở trang chi tiết sản phẩm)
+#
+# LƯU Ý — FPT Shop: các selector dưới đây (".b1-semibold" ...) chỉ còn là DỰ PHÒNG cuối cùng, GẦN
+# NHƯ KHÔNG BAO GIỜ khớp trên markup hiện tại của trang (2026-08, xác nhận từ HTML thật): class
+# "b1-semibold" trên site LUÔN dính tiền tố responsive Tailwind thành "pc:b1-semibold" — không có
+# phần tử nào mang class trần "b1-semibold". Nguồn giá THẬT cho FPT Shop giờ là
+# _fptshop_price_and_stock() (được gọi RIÊNG, ưu tiên trước mọi selector ở đây — xem
+# extract_price_generic()), không phải danh sách này.
 SELECTORS = {
     "CellphoneS": [".product__price--show", ".sale-price", "[itemprop='price']"],
     "GearVN": [".product-price", ".pro-price", ".price-current"],
@@ -200,6 +207,62 @@ def _price_value_to_int(price_raw) -> int | None:
         return clean_price(str(price_raw))
 
 
+# ── FPT Shop: chiến lược riêng (2026-08) ─────────────────────────────────────────────────────
+# Trang sản phẩm FPT Shop (Next.js) KHÔNG có JSON-LD, KHÔNG có meta og:price/product:price:amount,
+# và SELECTORS["FPT Shop"] (".b1-semibold") không còn khớp gì (xác nhận từ HTML thật: class này
+# trên site LUÔN dính tiền tố responsive Tailwind "pc:b1-semibold" — không tồn tại class trần
+# "b1-semibold"). Hệ quả: MỌI sản phẩm FPT Shop (kể cả CÒN hàng) đang fail "Không tìm thấy giá
+# trên trang" ở Mode B — không phải vấn đề riêng của hàng hết hàng.
+#
+# Giá THẬT nằm trong <p>/<span class="text-textOnWhitePrimary ...">1.199.000đ</span> — đúng class
+# discover_fptshop.py (Mode A) đã dùng qua JS eval. Class này dùng CHUNG cho nhiều đoạn text khác
+# trên trang (không riêng giá) nên phải lọc đúng ĐỊNH DẠNG giá (không chỉ "có chữ số"), tránh vớ
+# nhầm số điện thoại/ngày tháng/mã giảm giá. Bỏ qua phần tử "line-through" (giá cũ gạch ngang).
+#
+# QUAN TRỌNG — hết hàng ("Hàng sắp về"): trang VẪN hiển thị giá bình thường khi hết hàng (giống
+# CellphoneS ở khối availability phía trên), nên phải ĐỌC RIÊNG banner "Hàng sắp về" để suy ra
+# in_stock, KHÔNG được suy in_stock từ việc "có tìm thấy giá hay không" — nếu không sẽ luôn ghi
+# in_stock=True cho cả hàng hết, hoặc tệ hơn là bỏ qua sản phẩm hoàn toàn (không ghi được gì).
+_FPTSHOP_PRICE_RE = re.compile(r"^[0-9]{1,3}(?:\.[0-9]{3}){1,3}\s*đ?$")
+
+
+async def _fptshop_price_and_stock(page: Page) -> tuple[int | None, bool | None]:
+    """Đọc giá + tín hiệu hết hàng riêng cho FPT Shop. LUÔN cố lấy giá kể cả khi hết hàng — trang
+    không ẩn giá khi hết hàng, chỉ thêm banner "Hàng sắp về". Trả về (price, in_stock):
+      - price: giá VND tìm được (kể cả khi hết hàng), hoặc None nếu không tìm thấy phần tử nào
+        khớp định dạng giá (trang đổi cấu trúc / lỗi tải).
+      - in_stock: False nếu phát hiện banner/tín hiệu hết hàng trên trang; None nếu không có tín
+        hiệu rõ ràng (caller tự suy in_stock từ price > 0 như quy ước chung của hệ thống).
+    """
+    price: int | None = None
+    try:
+        loc = page.locator('[class*="text-textOnWhitePrimary"]')
+        for i in range(await loc.count()):
+            el = loc.nth(i)
+            cls = await el.get_attribute("class") or ""
+            if "line-through" in cls:   # giá cũ gạch ngang — bỏ qua, không phải giá hiện tại
+                continue
+            txt = (await el.inner_text()).strip()
+            if _FPTSHOP_PRICE_RE.match(txt):
+                p = clean_price(txt)
+                if p:
+                    price = p
+                    break
+    except Exception:
+        pass
+
+    in_stock: bool | None = None
+    try:
+        body_text = await page.locator("body").inner_text()
+        # is_out_of_stock() đã có sẵn pattern "hàng sắp về" (dùng chung mọi cửa hàng — stock.py).
+        if is_out_of_stock(body_text):
+            in_stock = False
+    except Exception:
+        pass
+
+    return price, in_stock
+
+
 def extract_labeled_price(text: str) -> int | None:
     """Lấy giá ngay sau nhãn giá chính, không lấy giá sản phẩm gợi ý."""
     patterns = (
@@ -227,9 +290,16 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
 
     Trả về (price, in_stock_from_availability):
       - price: giá VND tìm được, hoặc None nếu không tìm thấy ở bất kỳ chiến lược nào.
-      - in_stock_from_availability: bool nếu JSON-LD khai báo rõ offers.availability (xem
-        _availability_to_in_stock/_AVAILABILITY_OUT/_AVAILABILITY_IN ở đầu file), ngược lại None
-        (chưa biết — caller tự suy in_stock từ price > 0 như quy ước cũ).
+      - in_stock_from_availability: bool nếu có tín hiệu tồn kho RÕ RÀNG (JSON-LD
+        offers.availability — xem _availability_to_in_stock/_AVAILABILITY_OUT/_AVAILABILITY_IN ở
+        đầu file; hoặc banner trang riêng của FPT Shop — xem _fptshop_price_and_stock()), ngược
+        lại None (chưa biết — caller tự suy in_stock từ price > 0 như quy ước cũ).
+
+    QUAN TRỌNG — FPT Shop: chạy TRƯỚC MỌI chiến lược khác (xem _fptshop_price_and_stock() ở trên).
+    Trang FPT Shop không có JSON-LD/meta giá và selector CSS cũ đã lỗi thời, nên các chiến lược
+    generic bên dưới gần như không dùng được cho competitor này; nếu vì lý do nào đó
+    _fptshop_price_and_stock() cũng không tìm được giá (trang đổi cấu trúc tiếp), code RƠI XUỐNG
+    các chiến lược chung bên dưới như lưới an toàn thay vì bỏ cuộc ngay.
 
     QUAN TRỌNG — "Liên hệ"/hết hàng: nếu Ô GIÁ CHÍNH của sản phẩm (selector đặc thù của
     competitor, strategy 3) chứa văn bản kiểu "Liên hệ"/"Hết hàng" thay vì một con số, đó là TÍN
@@ -248,6 +318,14 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
     query/selector riêng). Xem khối comment ở đầu file. Ta đọc field này ngay trong strategy 1 và
     trả kèm theo price, để caller (scrape_source) ưu tiên nó hơn suy luận "price > 0".
     """
+    # 0. FPT Shop: chiến lược riêng, chạy TRƯỚC — xem docstring + comment ở _fptshop_price_and_stock().
+    if competitor == "FPT Shop":
+        price, in_stock = await _fptshop_price_and_stock(page)
+        if price is not None:
+            return price, in_stock
+        # Không tìm được giá qua chiến lược riêng (trang đổi cấu trúc?) — rơi xuống các chiến
+        # lược chung bên dưới như lưới an toàn, KHÔNG return ở đây.
+
     html = await page.content()
     availability_stock: bool | None = None
 
@@ -368,7 +446,13 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
 
 def _price_wait_selector(competitor: str) -> str:
     """Selector CSS gộp (OR) để wait_for_selector — bất kỳ selector giá nào của competitor này
-    xuất hiện là coi như khối giá đã render xong, không cần đợi mù theo thời gian cố định."""
+    xuất hiện là coi như khối giá đã render xong, không cần đợi mù theo thời gian cố định.
+
+    FPT Shop: giữ nguyên selector cũ trong SELECTORS chỉ cho MỤC ĐÍCH CHỜ (khối giá gần như chắc
+    chắn không khớp — xem ghi chú ở SELECTORS/_fptshop_price_and_stock()); do đó ta CHỜ THÊM class
+    "text-textOnWhitePrimary" thật sự dùng để đọc giá, để không đợi timeout vô ích rồi mới đọc."""
+    if competitor == "FPT Shop":
+        return ", ".join(SELECTORS[competitor] + ['[class*="text-textOnWhitePrimary"]'])
     sels = SELECTORS.get(competitor, [".price-current", ".product-price", "[itemprop='price']"])
     return ", ".join(sels)
 
@@ -508,13 +592,14 @@ async def scrape_source(
                 price = 0
                 availability_stock = False
 
-            # in_stock: ƯU TIÊN tín hiệu availability đọc từ JSON-LD (offers.availability) khi có
-            # — đây là dữ liệu THẬT do chính trang tự khai, và có thể là False dù price > 0 (site
-            # vẫn niêm yết giá cũ trong khi sản phẩm đang tạm hết hàng — xác nhận thật trên
-            # CellphoneS: price=26990000 nhưng availability=OutOfStock, badge "TẠM HẾT HÀNG" hiển
-            # thị RIÊNG ở #boxRegisterProduct, tách khỏi ô giá nên các chiến lược đọc giá không
-            # bao giờ thấy được nếu không đọc availability). Không có tín hiệu rõ ràng
-            # (availability_stock is None) -> suy in_stock từ giá như quy ước cũ.
+            # in_stock: ƯU TIÊN tín hiệu availability đọc từ JSON-LD hoặc từ chiến lược riêng của
+            # competitor (offers.availability — xem khối comment ở đầu file; hoặc banner "Hàng sắp
+            # về" của FPT Shop — xem _fptshop_price_and_stock()) khi có — đây là dữ liệu THẬT do
+            # chính trang tự khai/hiển thị, và có thể là False dù price > 0 (site vẫn niêm yết giá
+            # trong khi sản phẩm đang tạm hết hàng — xác nhận thật trên CellphoneS: price=26990000
+            # nhưng availability=OutOfStock; và trên FPT Shop: giá vẫn hiện bình thường kèm banner
+            # "Hàng sắp về" tách biệt khỏi ô giá). Không có tín hiệu rõ ràng (availability_stock is
+            # None) -> suy in_stock từ giá như quy ước cũ.
             in_stock = availability_stock if availability_stock is not None else price > 0
             flag = "" if in_stock else "  [Liên hệ/hết hàng — không ghi nhầm giá SP khác]"
             print(f"  ✅ {competitor} - {sku}: {price:,} VND{flag}")
