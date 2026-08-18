@@ -664,6 +664,16 @@ def box_sku(name: str | None) -> str | None:
 # AX12 (1500Mbps/Wifi 6)", "Switch D-link DGS-105GL (5 port)", "Access Point TP-Link Omada
 # EAP670". Định danh = mã model (token trộn chữ+số DÀI NHẤT, giữ "-": TL-SG108, DGS-105GL,
 # RG-RAP6260), bỏ token spec mạng (1500mbps, wifi, ax5400, 2.4/5ghz, poe, gigabit, port…).
+#
+# BUG ĐÃ SỬA (2026-08) — "N-pack" bị lấy nhầm làm mã model: TP-Link Deco bán theo bộ ("Deco X10
+# (2-pack)", "Deco X50 (1-pack)", "Deco E4 (3-Pack)"). Token "2-pack"/"3-pack" CÓ CẢ chữ lẫn số và
+# DÀI HƠN mã model thật (X10/X50/E4 chỉ 3 ký tự) — vì is_code() chọn token dài nhất (max(...,
+# key=len)), "2-pack" thắng "X10" và trở thành "mã" giả. Kết quả: SKU ra TP-LINK-2-PACK /
+# TP-LINK-1-PACK / TP-LINK-3-PACK — gộp/tách nhầm theo SỐ LƯỢNG PACK thay vì theo DÒNG MÁY, trong
+# khi "Deco" (mã dòng thật) không hề chứa chữ số nên chưa từng được coi là candidate.
+# Sửa: (1) thêm "N-pack"/"N pack" vào _NET_SPEC để nó KHÔNG được chọn làm mã model; (2) số lượng
+# pack VẪN LÀ một phần định danh thật (Deco X50 1-pack ≠ 3-pack, giá khác hẳn) nên tách riêng
+# thành hậu tố qua with_pack(), y hệt cách with_tier() đang ghép "Pro/Lite/Plus/Max".
 _NET_SPEC = re.compile(
     r"^(router|switch|hub|access|point|ap|bộ|bo|phát|phat|wifi|wi-fi|wlan|controller|gateway|"
     r"mesh|poe|gigabit|unmanaged|managed|smart|omada|unifi|eagle|pro|ai|nano|lite|vigor|"
@@ -672,9 +682,16 @@ _NET_SPEC = re.compile(
                                                           # DÍNH "mbps" -> là SPEC, KHÔNG phải mã model
     r"802\.11[a-z]*|"                                      # 802.11ax/ac: chuẩn wifi, không phải model
     r"\d+(\.\d+)?ghz|\d(\.\d)?/\d(\.\d)?ghz|ghz|"          # 5ghz, 2.4ghz, 2.4/5ghz
-    r"\d+port|port|dual|band|indoor|outdoor|sfp|xgs)$",
+    r"\d+port|port|dual|band|indoor|outdoor|sfp|xgs|"
+    r"\d+-?\s*pack)$",                                     # "2-pack"/"3-pack"/"1 pack" — SỐ LƯỢNG,
+                                                          # không phải mã model (xem ghi chú BUG ở trên)
     re.I,
 )
+
+# Số lượng bộ (pack) — TÁCH RIÊNG thành hậu tố vì nó LÀ một phần định danh thật (Deco X50 1-pack
+# và 3-pack là hai gói khác nhau, giá chênh lệch rõ), không phải filler để bỏ đi hoàn toàn như các
+# token spec khác trong _NET_SPEC.
+_NET_PACK = re.compile(r"(\d+)\s*-?\s*pack", re.I)
 
 
 def network_sku(name: str | None) -> str | None:
@@ -682,6 +699,7 @@ def network_sku(name: str | None) -> str | None:
 
     Mã model = token chữ+số dài nhất KHÔNG phải spec mạng. Giữ "-" (mã có gạch: TL-SG108,
     DGS-105GL). Bỏ dòng sản phẩm thuần chữ (Archer/Omada) và spec (wifi6/ax5400/mbps/port).
+    Số lượng "N-pack" (nếu có) được tách riêng và ghép làm hậu tố — xem with_pack().
     """
     from .brand import brand_of
 
@@ -723,17 +741,25 @@ def network_sku(name: str | None) -> str | None:
             return f"{code}-{toks[i + 1]}"
         return code
 
+    def with_pack(code: str) -> str:
+        """Ghép SỐ LƯỢNG BỘ (N-pack) nếu tên có nêu — Deco X50 1-pack và Deco X50 3-pack là hai
+        gói khác nhau, giá khác nhau thật, gộp chung sẽ ghi đè nhau trong catalog (xem ghi chú BUG
+        ở đầu khối network). Quét trên toàn bộ tên gốc (không chỉ toks) vì "(2-pack)" có thể đã bị
+        _NET_SPEC loại khỏi danh sách candidate code trước khi tới đây."""
+        m = _NET_PACK.search(name)
+        return f"{code}-{m.group(1)}PACK" if m else code
+
     cands = [
         t for t in toks
         if is_code(t) and not _NET_SPEC.match(t) and not wifi_class.match(t)
     ]
     if cands:
-        return f"{BRAND}-{with_tier(max(cands, key=len))}".upper().replace(" ", "-")
+        return f"{BRAND}-{with_pack(with_tier(max(cands, key=len)))}".upper().replace(" ", "-")
     # Dự phòng: model ngắn trùng hình dạng chuẩn wifi (Archer "C54"/"AX12" khi mọi token khác đều
     # là spec). Lấy token chữ+số dài nhất còn lại (kể cả wifi-class) — thà có SKU còn hơn None.
     fallback = [t for t in toks if is_code(t) and not _NET_SPEC.match(t)]
     if fallback:
-        return f"{BRAND}-{with_tier(max(fallback, key=len))}".upper().replace(" ", "-")
+        return f"{BRAND}-{with_pack(with_tier(max(fallback, key=len)))}".upper().replace(" ", "-")
     return None
 
 

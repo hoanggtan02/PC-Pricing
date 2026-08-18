@@ -37,6 +37,7 @@ CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa (mặc định ch
 # Các cửa hàng KHÔNG có trong dict này vẫn dùng CONCURRENCY_LIMIT mặc định như cũ.
 PER_COMPETITOR_CONCURRENCY = {
     "CellphoneS": 2,
+    "Thành Nhân": 15, 
 }
 
 # Ngưỡng GIÁ TỐI THIỂU hợp lệ. Không sản phẩm nào trong catalog (laptop, linh kiện, phụ kiện...)
