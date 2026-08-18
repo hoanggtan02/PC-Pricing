@@ -134,7 +134,7 @@ def goto_with_retry(
     url: str,
     wait_selector: str,
     *,
-    attempts: int = 3,
+    attempts: int = 5,
     goto_timeout: int = 60000,
     selector_timeout: int = 20000,
     label: str = "",
