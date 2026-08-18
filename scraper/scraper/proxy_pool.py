@@ -195,18 +195,50 @@ def _truthy_env(name: str, default: str = "1") -> bool:
     return os.environ.get(name, default).strip().lower() not in ("0", "false", "no", "")
 
 
+def _health_check_proxies(proxies: list[dict], timeout: float = 3.0, max_workers: int = 15) -> list[dict]:
+    """Kiểm tra song song tốc độ phản hồi của danh sách proxy qua socket/HTTP trong max 3s.
+    Loại bỏ các proxy chết hoặc treo ngay từ đầu để tránh làm trễ lượt chạy Playwright."""
+    if not proxies:
+        return []
+
+    import concurrent.futures
+
+    def check_one(p: dict) -> dict | None:
+        try:
+            with httpx.Client(proxies=p["server"], timeout=timeout) as client:
+                resp = client.get("https://httpbin.org/ip")
+                if resp.status_code == 200:
+                    return p
+        except Exception:
+            pass
+        return None
+
+    live = []
+    print(f"  🔍 Đang kiểm tra sức khỏe {len(proxies)} proxy...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(check_one, p) for p in proxies]
+        for f in concurrent.futures.as_completed(futures):
+            res = f.result()
+            if res:
+                live.append(res)
+
+    if live:
+        print(f"  ⚡ Đã lọc {len(live)}/{len(proxies)} proxy phản hồi tốt (<{timeout}s).")
+        return live
+    print(f"  ⚠️ Tất cả proxy test đều không phản hồi <{timeout}s, sử dụng danh sách gốc dự phòng.")
+    return proxies
+
+
 def _load_proxies() -> list[dict]:
     """Xem thứ tự ưu tiên nguồn proxy ở docstring đầu file. Tóm tắt: tự động tải từ ProxyScrape
     (bật sẵn) > PROXY_SERVER đơn lẻ (tương thích ngược, dự phòng)."""
-    # Tự động tải danh sách proxy free — BẬT SẴN, không cần cấu hình gì thêm. Tắt bằng
-    # PROXY_AUTO_FETCH=0 (vd nếu muốn quay lại hành vi cũ "không proxy khi thiếu PROXY_LIST").
     if _truthy_env("PROXY_AUTO_FETCH"):
         url = os.environ.get("PROXY_SCRAPE_URL", "").strip() or DEFAULT_PROXYSCRAPE_URL
         raw_auto = _fetch_remote_proxy_list(url)
         proxies = _parse_proxy_list(raw_auto) if raw_auto else []
         if proxies:
             print(f"  ℹ️  Đã tải {len(proxies)} proxy (miễn phí, tự động) từ ProxyScrape.")
-            return proxies
+            return _health_check_proxies(proxies)
         print("  ⚠️  Danh sách proxy tự động rỗng/lỗi — thử PROXY_SERVER (nếu có cấu hình).")
 
     # Tương thích ngược: PROXY_SERVER đơn lẻ -> danh sách 1 proxy.

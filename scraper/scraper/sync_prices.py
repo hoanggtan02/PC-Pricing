@@ -27,46 +27,14 @@ from .db import deactivate_source, get_client, insert_price, fetch_active_source
 from .proxy_pool import get_pool, is_proxy_error
 from .stock import is_out_of_stock
 
-CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa (mặc định cho mọi cửa hàng)
+CONCURRENCY_LIMIT = 5  
 
-# Override RIÊNG cho từng competitor — dùng khi 1 site cụ thể có dấu hiệu bị chặn/rate-limit
-# khi nhận nhiều request đồng thời từ cùng 1 IP runner CI (vd CellphoneS: gần như 100% SKU fail
-# "Không tìm thấy giá" trên CI dù trang thật vẫn có JSON-LD đầy đủ khi load tay/local). Nguyên
-# nhân chính đã xác định là IP (xem PROXY_COMPETITORS bên dưới), nhưng vẫn giữ giảm concurrency
-# này như một lớp phòng hờ bổ sung — không gây hại gì cho các cửa hàng khác.
-# Các cửa hàng KHÔNG có trong dict này vẫn dùng CONCURRENCY_LIMIT mặc định như cũ.
-#
-# "Thành Nhân": 15 -> 6 (2026-08, điều tra chuỗi fail "Không tìm thấy giá trên trang" hàng loạt
-# cho các SKU Lexar thẻ nhớ/RAM/SSD dài đuôi). Đã xác nhận các trang này CÓ offers.price hợp lệ
-# trong JSON-LD (không phải thiếu giá thật) — nên nguyên nhân nhiều khả năng là TIMING/TẢI TRANG,
-# không phải parse: 15 tab Chromium song song trên cùng 1 runner CI tranh CPU dữ dội, cộng với
-# trang sản phẩm TNC rất nặng (mega-menu + hàng trăm "Sản phẩm Hot Deal" ở cuối trang) khiến JSON-LD
-# có thể CHƯA kịp render/attach vào DOM lúc page.content() được gọi, đặc biệt với các SKU dài đuôi
-# ít được cache. 15 vốn là mức concurrency CAO NHẤT trong toàn hệ thống (cao hơn cả mặc định 5) —
-# hạ xuống 6 để giảm áp lực CPU/mạng đồng thời mà vẫn nhanh hơn đáng kể so với chạy tuần tự.
-# Nếu sau khi hạ vẫn còn fail hàng loạt, cân nhắc hạ tiếp hoặc điều tra thêm theo hướng khác.
-#
-# "An Phát PC": thêm cùng đợt (2026-08) — người dùng xác nhận An Phát cũng gặp CHUỖI FAIL "Không
-# tìm thấy giá trên trang" tương tự Thành Nhân. An Phát vốn đã được coi là site "nặng" (xem
-# SLOW_COMPETITORS bên dưới, và ghi chú trong discover_anphat.py: "An Phát giữ các kết nối mạng
-# luôn mở (do tracker)", "trang An Phát có menu danh mục khổng lồ" khiến layout rất nặng), nhưng
-# TRƯỚC ĐÂY chưa từng bị giảm concurrency riêng — vẫn chạy ở mức mặc định 5 dù chạy standalone
-# trong job riêng (sync.yml matrix, mỗi competitor 1 job). 5 tab song song trên cùng runner CI vẫn
-# có thể đủ để trang tracker-nặng này chưa kịp render xong giá lúc page.content() được gọi. Hạ
-# xuống 3 để giảm áp lực, tương tự hướng đã áp dụng cho Thành Nhân.
 PER_COMPETITOR_CONCURRENCY = {
     "CellphoneS": 4,
-    "Thành Nhân": 8,
+    "Thành Nhân": 8,    
     "An Phát PC": 4,
 }
 
-# Ngưỡng GIÁ TỐI THIỂU hợp lệ. Không sản phẩm nào trong catalog (laptop, linh kiện, phụ kiện...)
-# có giá THẬT dưới mức này — VND rẻ nhất trong catalog vẫn là hàng trăm nghìn trở lên. Một giá
-# < 500đ hầu như chắc chắn là DỮ LIỆU RÁC: placeholder giá "0đ"/"1đ" site trả về khi hết hàng/lỗi
-# render, phần còn sót của một class giá bị parse nhầm ("giảm 5%" đọc thành "5"), v.v. — KHÔNG
-# PHẢI giá thật của bất kỳ sản phẩm nào. Coi tín hiệu này là HẾT HÀNG (đồng bộ với quy ước
-# price=0 -> in_stock=False đã dùng xuyên suốt hệ thống — xem stock.stock_from_price()), thay vì
-# ghi nhầm một mức giá vô nghĩa vào price_history khiến dashboard hiện "rẻ nhất thị trường: 5đ".
 MIN_VALID_PRICE = 500
 
 
@@ -85,77 +53,25 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-# ── Các competitor CHẶN IP ngoài Việt Nam (Cloudflare/geo-block/anti-bot) — BẮT BUỘC qua proxy VN.
-# Khớp đúng danh sách use_proxy=True trong browser.py / các discover_*.py tương ứng
-# (discover_phongvu.py, discover_fptshop.py, discover_tgdd.py).
-#
-# CellphoneS được THÊM VÀO ĐÂY (trước đây không có): test thực tế cho thấy cùng code, cùng
-# concurrency, chạy LOCAL (IP nhà mạng VN) thì 10/10 thành công, nhưng chạy trên GitHub Actions
-# (IP datacenter nước ngoài) thì gần như 100% SKU fail "Không tìm thấy giá trên trang" — dù trang
-# thật (kiểm tra tay) vẫn có JSON-LD đầy đủ giá. Đây là dấu hiệu IP-block/anti-bot theo dải IP
-# datacenter, chứ không phải do concurrency hay selector lỗi thời — cùng lớp vấn đề với FPT
-# Shop/Phong Vũ/TGĐĐ nên xử lý bằng proxy VN là hợp lý.
-#
-# MỌI competitor khác (An Phát, HACOM, Thành Nhân, GearVN, Memoryzone) truy cập trực tiếp được —
-# KHÔNG được ép qua proxy, nếu không proxy hỏng/hết quota sẽ làm sập lây cả những site vốn không
-# cần proxy (ERR_TUNNEL_CONNECTION_FAILED hàng loạt dù URL hoàn toàn hợp lệ).
 PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop"}
 
-# PROXY_COMPETITORS: set[str] = set()
-
-# Timeout cho page.goto(). Site cần proxy VN được cấp timeout NGẮN HƠN (15s thay vì 30s mặc định):
-# khi một proxy đã chết/treo (không bao giờ trả lời), mỗi request qua nó chắc chắn ăn đủ timeout
-# rồi mới fail — với hàng trăm source dùng chung 1 proxy chết trước khi kịp rotate (xem
-# proxy_pool.is_proxy_error, đã sửa để nhận diện đúng "ERR_TIMED_OUT"), 30s/request nhân lên rất
-# chậm. 15s vẫn đủ cho trang thật load qua proxy VN bình thường (proxy VN tuy chậm hơn direct
-# nhưng hiếm khi cần tới 15s để commit response đầu tiên), trong khi cắt gọn ~50% thời gian chờ
-# vô ích của các request dính đúng lúc proxy vừa chết giữa lượt chạy.
 GOTO_TIMEOUT_MS = {
     "default": 30000,
     "proxy": 15000,
 }
 
-# Selector lấy giá cho từng đối thủ (ở trang chi tiết sản phẩm)
-#
-# LƯU Ý — FPT Shop: các selector dưới đây (".b1-semibold" ...) chỉ còn là DỰ PHÒNG cuối cùng, GẦN
-# NHƯ KHÔNG BAO GIỜ khớp trên markup hiện tại của trang (2026-08, xác nhận từ HTML thật): class
-# "b1-semibold" trên site LUÔN dính tiền tố responsive Tailwind thành "pc:b1-semibold" — không có
-# phần tử nào mang class trần "b1-semibold". Nguồn giá THẬT cho FPT Shop giờ là
-# _fptshop_price_and_stock() (được gọi RIÊNG, ưu tiên trước mọi selector ở đây — xem
-# extract_price_generic()), không phải danh sách này.
 SELECTORS = {
     "CellphoneS": [".product__price--show", ".sale-price", "[itemprop='price']"],
     "GearVN": [".product-price", ".pro-price", ".price-current"],
     "Thành Nhân": [".new-price", ".deal-price-value", ".product-price"],
-    # `data-price` của .js-pro-total-price là giá khuyến mại cuối cùng, không phải giá <del>.
     "An Phát PC": [".js-pro-total-price", ".p-price", ".d-pro-price", ".price-current"],
     "Phong Vũ": [".css-1755xpx", ".product-price", ".price-current", "span[class*='price']"],
     "Hà Nội Computer": [".dpro-p-price", ".price-current", ".product-price"],
     "Memoryzone": [".product-price", ".price-current"],
     "FPT Shop": [".b1-semibold", ".fpt-price", ".price-current"],
-    # LƯU Ý: TGDD (Next.js) dùng css-module class BĂM (hash) — đổi theo mỗi lần deploy, nên các
-    # selector dưới đây chỉ là DỰ PHÒNG best-effort, KHÔNG đáng tin. Nguồn giá chính cho TGDD là
-    # regex bám text "Giá tại <Tỉnh/Thành>" trong extract_labeled_price() bên dưới (ổn định hơn
-    # nhiều vì đó là câu UI cố định, không phụ thuộc class CSS bị băm).
     "Thế Giới Di Động": [".box-price-present", ".price-current"]
 }
 
-# ── Tồn kho từ JSON-LD (offers.availability) ────────────────────────────────────────────────
-# Một số cửa hàng (xác nhận thật: CellphoneS) vẫn niêm yết GIÁ bình thường trong offers.price ngay
-# cả khi sản phẩm đang hết hàng — tín hiệu hết hàng THẬT nằm ở field RIÊNG offers.availability
-# trong CÙNG khối JSON-LD (ví dụ thực tế lấy từ trang sản phẩm CellphoneS 2026-08:
-# {"price":"26990000", ..., "availability":"https://schema.org/OutOfStock"} — sản phẩm này hiển thị
-# badge "TẠM HẾT HÀNG" ở khối #boxRegisterProduct trên trang, HOÀN TOÀN TÁCH BIỆT khỏi ô giá).
-#
-# Trước đây extract_price_generic() chỉ đọc offers.price rồi trả về NGAY (JSON-LD được tin tuyệt
-# đối — xem comment trong hàm), bỏ qua hẳn offers.availability nằm cùng object đó -> sản phẩm hết
-# hàng thật bị ghi in_stock=True sai. Sửa: đọc availability CÙNG LÚC với price (không tốn thêm
-# request/DOM query nào — dữ liệu đã có sẵn trong JSON đang parse), map sang bool qua
-# _availability_to_in_stock(), và ƯU TIÊN nó hơn suy luận "price > 0" cũ khi có giá trị rõ ràng.
-#
-# Đây là dữ liệu CÓ CẤU TRÚC theo chuẩn schema.org (không phải CSS class dễ đổi theo redesign) nên
-# áp dụng được cho MỌI competitor có JSON-LD chuẩn, không chỉ CellphoneS — competitor nào không
-# khai availability (hoặc giá trị lạ) sẽ nhận None và rơi về hành vi suy-từ-giá như cũ, không đổi.
 _AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued"}
 _AVAILABILITY_IN = {
     "instock", "limitedavailability", "onlineonly", "presale", "preorder", "backorder",
@@ -207,22 +123,6 @@ def _price_value_to_int(price_raw) -> int | None:
         return clean_price(str(price_raw))
 
 
-# ── FPT Shop: chiến lược riêng (2026-08) ─────────────────────────────────────────────────────
-# Trang sản phẩm FPT Shop (Next.js) KHÔNG có JSON-LD, KHÔNG có meta og:price/product:price:amount,
-# và SELECTORS["FPT Shop"] (".b1-semibold") không còn khớp gì (xác nhận từ HTML thật: class này
-# trên site LUÔN dính tiền tố responsive Tailwind "pc:b1-semibold" — không tồn tại class trần
-# "b1-semibold"). Hệ quả: MỌI sản phẩm FPT Shop (kể cả CÒN hàng) đang fail "Không tìm thấy giá
-# trên trang" ở Mode B — không phải vấn đề riêng của hàng hết hàng.
-#
-# Giá THẬT nằm trong <p>/<span class="text-textOnWhitePrimary ...">1.199.000đ</span> — đúng class
-# discover_fptshop.py (Mode A) đã dùng qua JS eval. Class này dùng CHUNG cho nhiều đoạn text khác
-# trên trang (không riêng giá) nên phải lọc đúng ĐỊNH DẠNG giá (không chỉ "có chữ số"), tránh vớ
-# nhầm số điện thoại/ngày tháng/mã giảm giá. Bỏ qua phần tử "line-through" (giá cũ gạch ngang).
-#
-# QUAN TRỌNG — hết hàng ("Hàng sắp về"): trang VẪN hiển thị giá bình thường khi hết hàng (giống
-# CellphoneS ở khối availability phía trên), nên phải ĐỌC RIÊNG banner "Hàng sắp về" để suy ra
-# in_stock, KHÔNG được suy in_stock từ việc "có tìm thấy giá hay không" — nếu không sẽ luôn ghi
-# in_stock=True cho cả hàng hết, hoặc tệ hơn là bỏ qua sản phẩm hoàn toàn (không ghi được gì).
 _FPTSHOP_PRICE_RE = re.compile(r"^[0-9]{1,3}(?:\.[0-9]{3}){1,3}\s*đ?$")
 
 
@@ -240,7 +140,7 @@ async def _fptshop_price_and_stock(page: Page) -> tuple[int | None, bool | None]
         for i in range(await loc.count()):
             el = loc.nth(i)
             cls = await el.get_attribute("class") or ""
-            if "line-through" in cls:   # giá cũ gạch ngang — bỏ qua, không phải giá hiện tại
+            if "line-through" in cls:   
                 continue
             txt = (await el.inner_text()).strip()
             if _FPTSHOP_PRICE_RE.match(txt):
@@ -254,7 +154,6 @@ async def _fptshop_price_and_stock(page: Page) -> tuple[int | None, bool | None]
     in_stock: bool | None = None
     try:
         body_text = await page.locator("body").inner_text()
-        # is_out_of_stock() đã có sẵn pattern "hàng sắp về" (dùng chung mọi cửa hàng — stock.py).
         if is_out_of_stock(body_text):
             in_stock = False
     except Exception:
@@ -268,11 +167,6 @@ def extract_labeled_price(text: str) -> int | None:
     patterns = (
         r"giá\s+(?:mua\s+online|khuyến\s+mãi|bán|ưu\s+đãi)\s*:?\s*([\d.,]+)\s*(?:đ|vnđ|vnd)",
         r"(?:giá\s+hiện\s+tại|giá\s+sản\s+phẩm)\s*:?\s*([\d.,]+)\s*(?:đ|vnđ|vnd)",
-        # TGDD/ĐMX (Next.js, css-module class băm đổi theo mỗi lần deploy -> selector CSS không
-        # ổn định): trang KHÔNG có nhãn "giá bán:", giá nằm ngay sau câu hiển thị khu vực định giá
-        # "Giá tại <Tỉnh/Thành>" — câu này là text UI CỐ ĐỊNH, ổn định hơn nhiều so với bất kỳ class
-        # CSS nào. Cho phép whitespace/newline tùy ý giữa "giá tại ..." và số tiền đầu tiên gặp được
-        # (SSR nên số tiền đã nằm sẵn trong HTML thô, không cần đợi JS thêm).
         r"giá\s+tại\s+[^\n₫đ]{0,40}[\s\S]{0,20}?([\d.,]{7,})\s*(?:₫|đ|vnđ|vnd)",
     )
     for pattern in patterns:
@@ -329,21 +223,6 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
     html = await page.content()
     availability_stock: bool | None = None
 
-    # 1. JSON-LD schema — NGUỒN TIN TUYỆT ĐỐI cho GIÁ. Trang tự khai báo giá này để phục vụ Google/
-    # SEO (Google Shopping, rich snippet...), nên đây được coi là giá CHÍNH XÁC NHẤT — kể cả khi
-    # giá đó là 0 (sản phẩm hết hàng/liên hệ). Một khi đã parse được offers.price, DỪNG NGAY và
-    # trả thẳng — KHÔNG rơi xuống meta/CSS selector/regex bên dưới (những chiến lược đó chỉ nên
-    # chạy khi trang KHÔNG có JSON-LD hoặc JSON-LD không parse được).
-    #
-    # LƯU Ý quan trọng: dùng `offers.get("price") is not None` (KHÔNG dùng `if offers.get("price")`)
-    # — giá trị 0 là falsy trong Python nên check cũ đã VÔ TÌNH bỏ qua giá 0 hợp lệ và rơi xuống các
-    # chiến lược dự phòng, khiến trang có flash-sale/giá-liên-hệ bị đọc nhầm sang CSS selector giá
-    # thường. Cũng bỏ luôn ngưỡng `p > 1000`: ngưỡng đó chỉ hợp lý để lọc NHIỄU cho các chiến lược
-    # heuristic (CSS/regex), không áp dụng cho dữ liệu có cấu trúc mà ta đã quyết định tin tuyệt đối.
-    # LƯU Ý: chính vì JSON-LD được tin tuyệt đối và KHÔNG lọc theo ngưỡng giá tối thiểu ở đây, một
-    # giá trị rác/nhỏ bất thường (vd site trả "1"/"100" do lỗi render) vẫn có thể lọt qua tới đây —
-    # ngưỡng MIN_VALID_PRICE được áp dụng SAU CÙNG ở scrape_source(), sau khi mọi chiến lược (kể
-    # cả chiến lược "tin tuyệt đối" này) đã chạy xong, để bắt được cả trường hợp này.
     try:
         scripts = await page.locator("script[type='application/ld+json']").all_inner_texts()
         for script_text in scripts:
@@ -557,20 +436,6 @@ async def scrape_source(
 
         price, availability_stock = await extract_price_generic(page, competitor)
 
-        # Không tìm thấy giá ở lần đọc đầu — có thể trang tải chậm bất thường (CPU/mạng chia tải
-        # giữa nhiều tab song song) chứ chưa chắc trang thật sự thiếu giá. Thử lại trên CÙNG trang
-        # (KHÔNG goto lại): một số site geo/tracker-heavy (An Phát) không bao giờ đạt
-        # 'load'/'networkidle' ổn định — reload ở đây từng làm mỗi lần retry tốn hẳn 30s timeout
-        # thật, nghẽn cả các tab song song và làm kết quả TỆ HƠN. Chỉ đợi thêm một nhịp ngắn rồi
-        # đọc lại là đủ trong đa số case. Site "nặng" được thêm vài lượt đọc lại (thay vì chỉ 1)
-        # vì JS/JSON-LD của nó cần nhiều thời gian hơn để attach vào DOM khi bị dồn tải trên CI.
-        #
-        # QUAN TRỌNG: dùng `price is not None` để kiểm tra, KHÔNG dùng `if price:`. Từ khi JSON-LD
-        # được tin tuyệt đối (strategy 1 ở extract_price_generic) VÀ "Liên hệ" ở ô giá chính cũng
-        # được nhận diện và trả 0 ngay (strategy 3), `price` có thể hợp lệ là 0 (hết hàng/liên hệ
-        # THẬT) — 0 là falsy trong Python nên check cũ sẽ coi đó là "chưa tìm thấy" và retry vô ích,
-        # rồi vẫn quay lại đúng 0 đó (hoặc tệ hơn, có nguy cơ rơi vào chiến lược khác cho ra giá SAI
-        # nếu logic dừng sớm ở strategy 3 từng bị bỏ qua).
         extra_reads = 3 if is_slow else 1
         for _ in range(extra_reads):
             if price is not None:
@@ -579,12 +444,6 @@ async def scrape_source(
             price, availability_stock = await extract_price_generic(page, competitor)
 
         if price is not None:
-            # Giá RÁC dưới ngưỡng hợp lệ (MIN_VALID_PRICE): không sản phẩm nào trong catalog có
-            # giá thật thấp đến vậy — đây gần như chắc chắn là placeholder/lỗi parse, KHÔNG PHẢI
-            # giá thật. Coi là HẾT HÀNG giống tín hiệu "Liên hệ"/0 (đồng bộ quy ước price=0 ->
-            # in_stock=False), thay vì ghi một mức giá vô nghĩa vào price_history. Không áp dụng
-            # cho price == 0 (đã là "hết hàng" sẵn từ JSON-LD/"Liên hệ" ở trên) — chỉ bắt các giá
-            # RÁC KHÁC 0 nhưng vẫn quá nhỏ để là thật (vd 1, 100, 499).
             if 0 < price < MIN_VALID_PRICE:
                 print(
                     f"  ⚠️  {competitor} - {sku}: giá {price:,} VND < {MIN_VALID_PRICE}đ "
@@ -592,15 +451,6 @@ async def scrape_source(
                 )
                 price = 0
                 availability_stock = False
-
-            # in_stock: ƯU TIÊN tín hiệu availability đọc từ JSON-LD hoặc từ chiến lược riêng của
-            # competitor (offers.availability — xem khối comment ở đầu file; hoặc banner "Hàng sắp
-            # về" của FPT Shop — xem _fptshop_price_and_stock()) khi có — đây là dữ liệu THẬT do
-            # chính trang tự khai/hiển thị, và có thể là False dù price > 0 (site vẫn niêm yết giá
-            # trong khi sản phẩm đang tạm hết hàng — xác nhận thật trên CellphoneS: price=26990000
-            # nhưng availability=OutOfStock; và trên FPT Shop: giá vẫn hiện bình thường kèm banner
-            # "Hàng sắp về" tách biệt khỏi ô giá). Không có tín hiệu rõ ràng (availability_stock is
-            # None) -> suy in_stock từ giá như quy ước cũ.
             in_stock = availability_stock if availability_stock is not None else price > 0
             flag = "" if in_stock else "  [Liên hệ/hết hàng — không ghi nhầm giá SP khác]"
             print(f"  ✅ {competitor} - {sku}: {price:,} VND{flag}")
@@ -612,14 +462,6 @@ async def scrape_source(
                 await loop.run_in_executor(None, insert_price, client, sku, competitor, price, in_stock)
             return True
         else:
-            # Log thêm độ dài HTML lúc fail để phân biệt "trang thật sự không có giá" với "trang
-            # tải dở dang/timing" (vd chuỗi fail hàng loạt của TNC/Lexar dù đã xác nhận có
-            # offers.price hợp lệ trong JSON-LD khi tải tay — nghi ngờ JSON-LD chưa kịp attach vào
-            # DOM lúc page.content() được gọi). Một html_len bất thường nhỏ (so với các lần cào
-            # thành công khác của cùng competitor) là dấu hiệu trang bị cắt cụt do tải dở dang;
-            # html_len bình thường mà vẫn không tìm thấy giá thì nghiêng về "trang thật sự không
-            # có giá hiển thị" (hàng ngừng bán/chưa mở bán). Không raise/đổi hành vi, chỉ thêm dữ
-            # liệu chẩn đoán vào log + vào lý do fail trong file TSV.
             try:
                 html_len = len(await page.content())
             except Exception:
@@ -658,12 +500,47 @@ async def scrape_source(
     finally:
         await page.close()
 
+CHROMIUM_STEALTH_ARGS = [
+    "--disable-blink-features=AutomationControlled",
+    "--disable-infobars",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-extensions",
+]
+
+STEALTH_INIT_SCRIPT = """
+// 1. Mask navigator.webdriver
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+// 2. Emulate Chrome runtime
+if (!window.chrome) {
+    window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {}, app: {} };
+}
+
+// 3. Emulate languages & permissions
+Object.defineProperty(navigator, 'languages', { get: () => ['vi-VN', 'vi', 'en-US', 'en'] });
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+"""
+
 async def _build_proxy_context(browser, proxy: dict | None):
-    """Tạo context mới ứng với `proxy` hiện tại (proxy=None -> context không proxy)."""
-    kwargs = {"user_agent": USER_AGENT, "viewport": {"width": 1280, "height": 800}}
+    """Tạo context mới với ngụy trang chống chặn (Stealth Evasion) & Proxy."""
+    kwargs = {
+        "user_agent": USER_AGENT,
+        "viewport": {"width": 1280, "height": 800},
+        "locale": "vi-VN",
+        "timezone_id": "Asia/Ho_Chi_Minh",
+        "extra_http_headers": {
+            "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+        }
+    }
     if proxy:
         kwargs["proxy"] = proxy
-    return await browser.new_context(**kwargs)
+    ctx = await browser.new_context(**kwargs)
+    await ctx.add_init_script(STEALTH_INIT_SCRIPT)
+    return ctx
 
 
 async def worker(queue, browser, contexts: dict, dry_run, client, results):
@@ -687,13 +564,6 @@ async def worker(queue, browser, contexts: dict, dry_run, client, results):
         needs_proxy = competitor in PROXY_COMPETITORS
 
         if needs_proxy:
-            # get_pool() TỰ ĐỘNG TẢI danh sách proxy free từ ProxyScrape ngay khi được gọi lần đầu
-            # (không lazy — xem proxy_pool.get_pool()/_load_proxies()). Gọi vô điều kiện ở đầu hàm
-            # (như trước đây) khiến MỌI lượt sync — kể cả lượt CHỈ cào site không cần proxy như
-            # TGDD/An Phát/HACOM/GearVN/Memoryzone/Thành Nhân — đều tải về 20-30 proxy hoàn toàn vô
-            # ích (tốn thời gian + một request mạng thừa ra ProxyScrape). Chỉ gọi khi source NÀY
-            # thật sự cần proxy; lru_cache của get_pool() đảm bảo các worker/source cần proxy khác
-            # trong CÙNG lượt chạy vẫn dùng chung một pool đã tải, không tải lại nhiều lần.
             pool = get_pool()
             live_proxy = pool.current()
             if live_proxy is None:
@@ -842,12 +712,8 @@ async def run_sync(
         print(f"Cửa hàng cần proxy VN: {', '.join(proxy_needed)} — {pool.status()}")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-
-        context_direct = await browser.new_context(
-            user_agent=USER_AGENT,
-            viewport={"width": 1280, "height": 800},
-        )
+        browser = await p.chromium.launch(headless=True, args=CHROMIUM_STEALTH_ARGS)
+        context_direct = await _build_proxy_context(browser, None)
 
         contexts = {"direct": context_direct, "proxy": None, "proxy_obj": None, "lock": asyncio.Lock()}
         if proxy_needed:
