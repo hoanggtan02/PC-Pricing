@@ -508,6 +508,7 @@ def _record_failure(
 async def scrape_source(
     context, source: dict, dry_run: bool, client, proxy: dict | None = None,
     failures: list[dict] | None = None,
+    results: dict | None = None,
 ) -> bool:
     """Trả về True nếu lấy được giá. `proxy` (nếu có) là proxy hiện tại của `context`, dùng để
     biết nên mark_dead khi lỗi là lỗi PROXY (xem is_proxy_error) chứ không phải lỗi trang đích.
@@ -603,6 +604,8 @@ async def scrape_source(
             in_stock = availability_stock if availability_stock is not None else price > 0
             flag = "" if in_stock else "  [Liên hệ/hết hàng — không ghi nhầm giá SP khác]"
             print(f"  ✅ {competitor} - {sku}: {price:,} VND{flag}")
+            if results is not None:
+                results["last_price"] = price
             if not dry_run:
                 # Ghi giá vào DB
                 loop = asyncio.get_event_loop()
@@ -725,7 +728,7 @@ async def worker(queue, browser, contexts: dict, dry_run, client, results):
             proxy_for_mark = None
 
         success = await scrape_source(
-            context, source, dry_run, client, proxy=proxy_for_mark, failures=results["failures"]
+            context, source, dry_run, client, proxy=proxy_for_mark, failures=results["failures"], results=results
         )
         results["success" if success else "failed"] += 1
         results["by_competitor"][source["competitor"]]["success" if success else "failed"] += 1
@@ -790,29 +793,43 @@ async def run_sync(
     competitor: str | None = None,
     skip_refresh: bool = False,
     failures_file: str | None = "sync_failures.tsv",
+    single_url: str | None = None,
+    single_sku: str | None = None,
+    single_competitor: str | None = None,
+    json_output: bool = False,
 ):
     client = get_client()
-    # Chỉ lấy source của MỘT competitor khi chạy job song song theo cửa hàng (sync.yml matrix).
-    # Bỏ trống competitor -> lấy toàn bộ (hành vi cũ, chạy tuần tự tất cả cửa hàng trong 1 process).
-    sources = fetch_active_sources(client, competitor=competitor)
-    if not sources:
-        who = f" cho '{competitor}'" if competitor else ""
-        print(f"Không tìm thấy source active nào{who} trong Database.")
-        if failures_file:
-            _write_failures_file(failures_file, [])
-        return
 
-    # Xen kẽ theo competitor TRƯỚC khi cắt --limit, để cả khi limit nhỏ vẫn thấy nhiều shop
-    # (hữu ích lúc test), và để CONCURRENCY_LIMIT worker không dồn hết vào một competitor.
-    sources = _interleave_by_competitor(sources)
+    if single_url:
+        comp_name = single_competitor or competitor or "Unknown"
+        sku_val = single_sku or "SINGLE_TEST"
+        sources = [{"product_sku": sku_val, "competitor": comp_name, "url": single_url}]
+    else:
+        # Chỉ lấy source của MỘT competitor khi chạy job song song theo cửa hàng (sync.yml matrix).
+        # Bỏ trống competitor -> lấy toàn bộ (hành vi cũ, chạy tuần tự tất cả cửa hàng trong 1 process).
+        sources = fetch_active_sources(client, competitor=competitor)
+        if not sources:
+            who = f" cho '{competitor}'" if competitor else ""
+            print(f"Không tìm thấy source active nào{who} trong Database.")
+            if failures_file:
+                _write_failures_file(failures_file, [])
+            if json_output:
+                print("\nJSON_RESULT:" + json.dumps({"success": False, "error": f"Không tìm thấy source active nào{who}"}))
+            return
 
-    if limit:
-        sources = sources[:limit]
+        # Xen kẽ theo competitor TRƯỚC khi cắt --limit, để cả khi limit nhỏ vẫn thấy nhiều shop
+        # (hữu ích lúc test), và để CONCURRENCY_LIMIT worker không dồn hết vào một competitor.
+        sources = _interleave_by_competitor(sources)
+
+        if limit:
+            sources = sources[:limit]
 
     # Concurrency cho lượt chạy này — mặc định CONCURRENCY_LIMIT, TRỪ các competitor có override
     # riêng trong PER_COMPETITOR_CONCURRENCY (hiện có CellphoneS, Thành Nhân) khi job chỉ lo riêng
     # cửa hàng đó.
-    effective_concurrency = _concurrency_for(competitor)
+    effective_concurrency = _concurrency_for(competitor or single_competitor)
+    if single_url:
+        effective_concurrency = 1
 
     print(f"Bắt đầu đồng bộ giá cho {len(sources)} sources (Concurrency: {effective_concurrency})...")
     totals = Counter(source["competitor"] for source in sources)
@@ -820,32 +837,18 @@ async def run_sync(
         f"{c}={n}" for c, n in sorted(totals.items())
     ))
     proxy_needed = sorted(c for c in totals if c in PROXY_COMPETITORS)
-    # get_pool() TỰ ĐỘNG TẢI danh sách proxy free từ ProxyScrape ngay khi được gọi (không lazy) —
-    # gọi vô điều kiện ở đây (như trước đây) từng khiến MỌI lượt sync, kể cả lượt chỉ cào site
-    # không cần proxy (TGDD/An Phát/HACOM/GearVN/Memoryzone/Thành Nhân...), đều tải về proxy vô
-    # ích. Chỉ gọi khi lượt chạy này THẬT SỰ có competitor cần proxy VN.
     pool = get_pool() if proxy_needed else None
     if proxy_needed:
         print(f"Cửa hàng cần proxy VN: {', '.join(proxy_needed)} — {pool.status()}")
-    if effective_concurrency != CONCURRENCY_LIMIT:
-        print(f"  ⚠️  Giảm concurrency xuống {effective_concurrency} cho '{competitor}' "
-              f"(nghi bị chặn/rate-limit khi nhận nhiều request đồng thời).")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
 
-        # Context KHÔNG proxy — dùng cho An Phát, HACOM, Thành Nhân, GearVN, Memoryzone.
-        # Đây là context MẶC ĐỊNH cho gần hết source, nên proxy hỏng sẽ KHÔNG còn ảnh hưởng tới chúng.
         context_direct = await browser.new_context(
             user_agent=USER_AGENT,
             viewport={"width": 1280, "height": 800},
         )
 
-        # Context CÓ proxy — chỉ tạo khi thực sự có site cần proxy trong lượt chạy này, và chỉ khi
-        # pool có proxy sống. Nếu cần mà pool rỗng/chết hết, các source đó sẽ bị skip có cảnh báo
-        # rõ ràng ở worker() thay vì đi thẳng vào context_direct và luôn 403.
-        # contexts["lock"] bảo vệ việc REBUILD context proxy khi nhiều worker cùng phát hiện proxy
-        # chết gần như đồng thời — chỉ một worker được rebuild, các worker khác chờ rồi dùng lại.
         contexts = {"direct": context_direct, "proxy": None, "proxy_obj": None, "lock": asyncio.Lock()}
         if proxy_needed:
             live_proxy = pool.current()
@@ -867,6 +870,7 @@ async def run_sync(
                 competitor_name: {"success": 0, "failed": 0} for competitor_name in totals
             },
             "failures": [],  # danh sách chi tiết mọi link cào lỗi trong lượt chạy này
+            "last_price": None,
         }
         
         # Tạo worker tasks chạy song song
@@ -874,7 +878,6 @@ async def run_sync(
         for _ in range(effective_concurrency):
             task = asyncio.create_task(worker(queue, browser, contexts, dry_run, client, results))
             tasks.append(task)
-            # Thêm tín hiệu dừng cho mỗi worker
             await queue.put(None)
 
         await queue.join()
@@ -884,22 +887,14 @@ async def run_sync(
     if proxy_needed:
         print(f"Trạng thái proxy cuối lượt chạy: {pool.status()}")
     print(f"\nHoàn tất đồng bộ giá: Thành công {results['success']}, Thất bại {results['failed']}.")
-    print("Kết quả theo cửa hàng:")
-    for c in sorted(results["by_competitor"]):
-        stats = results["by_competitor"][c]
-        print(f"  - {c}: {stats['success']}/{totals[c]} thành công, {stats['failed']} thất bại")
 
-    # In danh sách link lỗi ngay trong log (dễ đọc khi debug tay), rồi ghi ra file để CI gom lại.
     if results["failures"]:
         print(f"\n⚠️  {len(results['failures'])} link cào lỗi trong lượt chạy này:")
         for row in results["failures"]:
             print(f"  - [{row['competitor']}] {row['sku']}: {row['reason']} ({row['url']})")
-    if failures_file:
+    if failures_file and not single_url:
         _write_failures_file(failures_file, results["failures"])
 
-    # skip_refresh=True khi chạy job song song theo competitor (sync.yml) — refresh được gộp lại
-    # thành MỘT job riêng chạy SAU KHI mọi job competitor xong, tránh nhiều job cùng RPC refresh
-    # chồng lên nhau (race) hoặc refresh sớm khi các job khác chưa ghi xong.
     if not dry_run and not skip_refresh:
         print("Đang làm mới cache Supabase...")
         try:
@@ -908,29 +903,49 @@ async def run_sync(
         except Exception as e:
             print(f"Lỗi làm mới cache: {e}")
 
+    if json_output:
+        succ = results["success"] > 0
+        err_msg = results["failures"][0]["reason"] if results["failures"] else "Không lấy được giá"
+        output_obj = {
+            "success": succ,
+            "price": results.get("last_price") if succ else 0,
+            "error": None if succ else err_msg
+        }
+        print("\nJSON_RESULT:" + json.dumps(output_obj))
+
 def main():
     parser = argparse.ArgumentParser(description="Sync prices directly from database source URLs.")
     parser.add_argument("--dry", action="store_true", help="dry run (don't write to DB)")
     parser.add_argument("--limit", type=int, default=None, help="limit the number of sources to scrape")
     parser.add_argument(
         "--competitor", default=None,
-        help="chỉ đồng bộ giá cho MỘT competitor (dùng khi chạy job song song theo cửa hàng, xem sync.yml)",
+        help="chỉ đồng bộ giá cho MỘT competitor",
     )
     parser.add_argument(
         "--skip-refresh", action="store_true",
-        help="không refresh cache latest_prices sau khi chạy — dùng khi có job refresh riêng ở cuối",
+        help="không refresh cache latest_prices sau khi chạy",
     )
     parser.add_argument(
         "--failures-file", default="sync_failures.tsv",
-        help="đường dẫn file TSV ghi lại các link cào lỗi (competitor/sku/url/reason); "
-             "truyền rỗng ('') để tắt ghi file",
+        help="đường dẫn file TSV ghi lại các link cào lỗi",
     )
+    parser.add_argument("--single-url", default=None, help="Cào duy nhất 1 URL sản phẩm")
+    parser.add_argument("--single-sku", default=None, help="SKU cho single URL")
+    parser.add_argument("--single-competitor", default=None, help="Competitor cho single URL")
+    parser.add_argument("--json-output", action="store_true", help="In kết quả dạng JSON ở stdout")
     args = parser.parse_args()
 
     asyncio.run(
         run_sync(
-            args.dry, args.limit, args.competitor, args.skip_refresh,
+            dry_run=args.dry,
+            limit=args.limit,
+            competitor=args.competitor,
+            skip_refresh=args.skip_refresh,
             failures_file=args.failures_file or None,
+            single_url=args.single_url,
+            single_sku=args.single_sku,
+            single_competitor=args.single_competitor,
+            json_output=args.json_output,
         )
     )
 
