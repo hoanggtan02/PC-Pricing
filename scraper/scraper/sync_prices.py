@@ -56,8 +56,8 @@ CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa (mặc định ch
 # xuống 3 để giảm áp lực, tương tự hướng đã áp dụng cho Thành Nhân.
 PER_COMPETITOR_CONCURRENCY = {
     "CellphoneS": 4,
-    "Thành Nhân": 6,
-    "An Phát PC": 3,
+    "Thành Nhân": 8,
+    "An Phát PC": 4,
 }
 
 # Ngưỡng GIÁ TỐI THIỂU hợp lệ. Không sản phẩm nào trong catalog (laptop, linh kiện, phụ kiện...)
