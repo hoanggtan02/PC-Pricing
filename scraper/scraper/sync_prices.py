@@ -35,9 +35,19 @@ CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa (mặc định ch
 # nhân chính đã xác định là IP (xem PROXY_COMPETITORS bên dưới), nhưng vẫn giữ giảm concurrency
 # này như một lớp phòng hờ bổ sung — không gây hại gì cho các cửa hàng khác.
 # Các cửa hàng KHÔNG có trong dict này vẫn dùng CONCURRENCY_LIMIT mặc định như cũ.
+#
+# "Thành Nhân": 15 -> 6 (2026-08, điều tra chuỗi fail "Không tìm thấy giá trên trang" hàng loạt
+# cho các SKU Lexar thẻ nhớ/RAM/SSD dài đuôi). Đã xác nhận các trang này CÓ offers.price hợp lệ
+# trong JSON-LD (không phải thiếu giá thật) — nên nguyên nhân nhiều khả năng là TIMING/TẢI TRANG,
+# không phải parse: 15 tab Chromium song song trên cùng 1 runner CI tranh CPU dữ dội, cộng với
+# trang sản phẩm TNC rất nặng (mega-menu + hàng trăm "Sản phẩm Hot Deal" ở cuối trang) khiến JSON-LD
+# có thể CHƯA kịp render/attach vào DOM lúc page.content() được gọi, đặc biệt với các SKU dài đuôi
+# ít được cache. 15 vốn là mức concurrency CAO NHẤT trong toàn hệ thống (cao hơn cả mặc định 5) —
+# hạ xuống 6 để giảm áp lực CPU/mạng đồng thời mà vẫn nhanh hơn đáng kể so với chạy tuần tự.
+# Nếu sau khi hạ vẫn còn fail hàng loạt, cân nhắc hạ tiếp hoặc điều tra thêm theo hướng khác.
 PER_COMPETITOR_CONCURRENCY = {
     "CellphoneS": 2,
-    "Thành Nhân": 15, 
+    "Thành Nhân": 6,
 }
 
 # Ngưỡng GIÁ TỐI THIỂU hợp lệ. Không sản phẩm nào trong catalog (laptop, linh kiện, phụ kiện...)
@@ -318,7 +328,15 @@ async def _wait_price_rendered(page: Page, competitor: str, timeout: int) -> Non
 
 # Các competitor "nặng" (tracker/JS chạy lâu, hoặc dễ bị dồn tải khi nhiều worker cào song song)
 # cần thêm thời gian chờ render + thêm lượt đọc lại so với mặc định. Xem ghi chú ở scrape_source().
-SLOW_COMPETITORS = {"An Phát PC"}
+#
+# "Thành Nhân" ĐƯỢC THÊM VÀO ĐÂY (2026-08, cùng đợt sửa với PER_COMPETITOR_CONCURRENCY ở trên):
+# đã xác nhận các trang bị fail "Không tìm thấy giá trên trang" hàng loạt (SKU Lexar dài đuôi) VẪN
+# CÓ offers.price hợp lệ trong JSON-LD — tức đây không phải lỗi thiếu giá thật, mà nhiều khả năng
+# là JSON-LD/DOM chưa kịp render xong lúc page.content() được gọi. Trang sản phẩm TNC rất nặng
+# (mega-menu khổng lồ + hàng trăm sản phẩm "Hot Deal" chèn cuối trang) nên cần nhiều thời gian hơn
+# mức mặc định (10s + 1 lần đọc lại) để chắc chắn JSON-LD đã attach vào DOM, đặc biệt khi bị dồn
+# tải bởi nhiều tab chạy song song trên cùng runner CI.
+SLOW_COMPETITORS = {"An Phát PC", "Thành Nhân"}
 
 
 def _record_failure(
@@ -362,7 +380,7 @@ async def scrape_source(
         await page.goto(url, wait_until="commit", timeout=goto_timeout)
 
         # Chờ ĐÚNG theo tín hiệu khối giá đã render (không phải chờ cố định) — xem _wait_price_rendered.
-        # Site "nặng" (SLOW_COMPETITORS) được cấp thêm thời gian: khi CI chạy 5 tab song song, các
+        # Site "nặng" (SLOW_COMPETITORS) được cấp thêm thời gian: khi CI chạy nhiều tab song song, các
         # site có tracker nặng/dễ bị dồn tải cần lâu hơn để JS render xong giá so với chạy đơn lẻ
         # trên máy local.
         is_slow = competitor in SLOW_COMPETITORS
@@ -383,12 +401,12 @@ async def scrape_source(
         price = await extract_price_generic(page, competitor)
 
         # Không tìm thấy giá ở lần đọc đầu — có thể trang tải chậm bất thường (CPU/mạng chia tải
-        # giữa 5 tab song song) chứ chưa chắc trang thật sự thiếu giá. Thử lại trên CÙNG trang (KHÔNG
-        # goto lại): một số site geo/tracker-heavy (An Phát) không bao giờ đạt 'load'/'networkidle'
-        # ổn định — reload ở đây từng làm mỗi lần retry tốn hẳn 30s timeout thật, nghẽn cả 5 tab song
-        # song và làm kết quả TỆ HƠN. Chỉ đợi thêm một nhịp ngắn rồi đọc lại là đủ trong đa số case.
-        # Site "nặng" được thêm vài lượt đọc lại (thay vì chỉ 1) vì JS của nó cần nhiều thời gian
-        # hơn để điền giá vào DOM khi bị dồn tải trên CI.
+        # giữa nhiều tab song song) chứ chưa chắc trang thật sự thiếu giá. Thử lại trên CÙNG trang
+        # (KHÔNG goto lại): một số site geo/tracker-heavy (An Phát) không bao giờ đạt
+        # 'load'/'networkidle' ổn định — reload ở đây từng làm mỗi lần retry tốn hẳn 30s timeout
+        # thật, nghẽn cả các tab song song và làm kết quả TỆ HƠN. Chỉ đợi thêm một nhịp ngắn rồi
+        # đọc lại là đủ trong đa số case. Site "nặng" được thêm vài lượt đọc lại (thay vì chỉ 1)
+        # vì JS/JSON-LD của nó cần nhiều thời gian hơn để attach vào DOM khi bị dồn tải trên CI.
         #
         # QUAN TRỌNG: dùng `price is not None` để kiểm tra, KHÔNG dùng `if price:`. Từ khi JSON-LD
         # được tin tuyệt đối (strategy 1 ở extract_price_generic) VÀ "Liên hệ" ở ô giá chính cũng
@@ -431,9 +449,27 @@ async def scrape_source(
                 await loop.run_in_executor(None, insert_price, client, sku, competitor, price, in_stock)
             return True
         else:
-            print(f"  ❌ {competitor} - {sku}: Không tìm thấy giá trên trang ({url})")
+            # Log thêm độ dài HTML lúc fail để phân biệt "trang thật sự không có giá" với "trang
+            # tải dở dang/timing" (vd chuỗi fail hàng loạt của TNC/Lexar dù đã xác nhận có
+            # offers.price hợp lệ trong JSON-LD khi tải tay — nghi ngờ JSON-LD chưa kịp attach vào
+            # DOM lúc page.content() được gọi). Một html_len bất thường nhỏ (so với các lần cào
+            # thành công khác của cùng competitor) là dấu hiệu trang bị cắt cụt do tải dở dang;
+            # html_len bình thường mà vẫn không tìm thấy giá thì nghiêng về "trang thật sự không
+            # có giá hiển thị" (hàng ngừng bán/chưa mở bán). Không raise/đổi hành vi, chỉ thêm dữ
+            # liệu chẩn đoán vào log + vào lý do fail trong file TSV.
+            try:
+                html_len = len(await page.content())
+            except Exception:
+                html_len = -1
+            print(
+                f"  ❌ {competitor} - {sku}: Không tìm thấy giá trên trang "
+                f"(html={html_len} ký tự) ({url})"
+            )
             if failures is not None:
-                _record_failure(failures, competitor, sku, url, "Không tìm thấy giá trên trang")
+                _record_failure(
+                    failures, competitor, sku, url,
+                    f"Không tìm thấy giá trên trang (html={html_len} ký tự)",
+                )
             return False
             
     except Exception as e:
@@ -614,7 +650,8 @@ async def run_sync(
         sources = sources[:limit]
 
     # Concurrency cho lượt chạy này — mặc định CONCURRENCY_LIMIT, TRỪ các competitor có override
-    # riêng trong PER_COMPETITOR_CONCURRENCY (hiện chỉ CellphoneS) khi job chỉ lo riêng cửa hàng đó.
+    # riêng trong PER_COMPETITOR_CONCURRENCY (hiện có CellphoneS, Thành Nhân) khi job chỉ lo riêng
+    # cửa hàng đó.
     effective_concurrency = _concurrency_for(competitor)
 
     print(f"Bắt đầu đồng bộ giá cho {len(sources)} sources (Concurrency: {effective_concurrency})...")
