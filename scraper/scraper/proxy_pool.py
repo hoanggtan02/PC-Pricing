@@ -195,26 +195,43 @@ def _truthy_env(name: str, default: str = "1") -> bool:
     return os.environ.get(name, default).strip().lower() not in ("0", "false", "no", "")
 
 
-def _health_check_proxies(proxies: list[dict], timeout: float = 3.0, max_workers: int = 15) -> list[dict]:
-    """Kiểm tra song song tốc độ phản hồi của danh sách proxy qua socket/HTTP trong max 3s.
-    Loại bỏ các proxy chết hoặc treo ngay từ đầu để tránh làm trễ lượt chạy Playwright."""
+def _health_check_proxies(proxies: list[dict], timeout: float = 4.0, max_workers: int = 20) -> list[dict]:
+    """Kiểm tra song song tốc độ phản hồi của danh sách proxy qua HTTP trong max 4s.
+    Dùng URL thật của site VN (fptshop) thay vì httpbin để lọc đúng proxy hoạt động với target."""
     if not proxies:
         return []
 
     import concurrent.futures
 
+    # Test URL thật sát với site cần proxy nhất — nếu proxy trả về response HTTP bất kỳ là OK
+    TEST_URLS = [
+        "https://fptshop.com.vn/",
+        "https://www.thegioididong.com/",
+    ]
+
     def check_one(p: dict) -> dict | None:
-        try:
-            with httpx.Client(proxies=p["server"], timeout=timeout) as client:
-                resp = client.get("https://httpbin.org/ip")
-                if resp.status_code == 200:
-                    return p
-        except Exception:
-            pass
+        for test_url in TEST_URLS:
+            try:
+                with httpx.Client(
+                    proxy=p["server"] if "username" not in p else None,
+                    mounts={"https://": httpx.HTTPTransport(proxy=httpx.Proxy(
+                        url=p["server"],
+                        auth=(p.get("username"), p.get("password")) if p.get("username") else None
+                    ))} if p.get("username") else None,
+                    timeout=timeout,
+                    follow_redirects=True,
+                ) as client:
+                    resp = client.get(test_url, headers={"User-Agent": "Mozilla/5.0"})
+                    # Chấp nhận bất kỳ response HTTP có status code — kể cả 403/429
+                    # (403 từ Cloudflare vẫn nghĩa là proxy HOẠT ĐỘNG, chỉ site chặn bot)
+                    if resp.status_code > 0:
+                        return p
+            except Exception:
+                continue
         return None
 
     live = []
-    print(f"  🔍 Đang kiểm tra sức khỏe {len(proxies)} proxy...")
+    print(f"  🔍 Đang kiểm tra sức khỏe {len(proxies)} proxy (test thực tế FPT Shop / TGDĐ)...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(check_one, p) for p in proxies]
         for f in concurrent.futures.as_completed(futures):

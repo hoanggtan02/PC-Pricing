@@ -496,6 +496,41 @@ async def scrape_source(
         # cho các source proxy TIẾP THEO trong hàng đợi — không cần dừng cả job để đổi tay.
         if proxy is not None and is_proxy_error(msg):
             get_pool().mark_dead(proxy)
+            # Tự động thử lại với proxy mới nếu lỗi là do proxy chết
+            # (caller worker() sẽ phát hiện proxy_obj đổi và rebuild context cho SOURCE TIẾP THEO;
+            #  ở đây ta retry NGAY TRONG source này để không mất dữ liệu chỉ vì proxy sập)
+            next_proxy = get_pool().current()
+            if next_proxy and next_proxy != proxy:
+                print(f"  🔄 {competitor} - {sku}: Proxy {proxy['server']} lỗi, thử lại với {next_proxy['server']}...")
+                try:
+                    from .proxy_pool import get_pool as _gp
+                    # Mở page mới qua proxy mới trực tiếp — không cần context đầy đủ
+                    retry_page = await context.browser.new_context(
+                        user_agent=USER_AGENT,
+                        viewport={"width": 1280, "height": 800},
+                        proxy=next_proxy,
+                    )
+                    retry_pg = await retry_page.new_page()
+                    await retry_pg.route("**/*", lambda route: route.abort() if route.request.resource_type in {"image", "media", "font"} else route.continue_())
+                    await retry_pg.goto(url, wait_until="commit", timeout=GOTO_TIMEOUT_MS["proxy"])
+                    await _wait_price_rendered(retry_pg, competitor, timeout=15000)
+                    retry_price, retry_stock = await extract_price_generic(retry_pg, competitor)
+                    await retry_pg.close()
+                    await retry_page.close()
+                    if retry_price is not None:
+                        in_stock_retry = retry_stock if retry_stock is not None else retry_price > 0
+                        print(f"  ✅ {competitor} - {sku}: {retry_price:,} VND (retry thành công via {next_proxy['server']})")
+                        if results is not None:
+                            results["last_price"] = retry_price
+                        if not dry_run:
+                            loop = asyncio.get_event_loop()
+                            await loop.run_in_executor(None, insert_price, client, sku, competitor, retry_price, in_stock_retry)
+                        return True
+                except Exception as retry_err:
+                    retry_msg = str(retry_err).splitlines()[0][:80]
+                    print(f"  ❌ {competitor} - {sku}: Retry cũng thất bại ({retry_msg})")
+                    if is_proxy_error(retry_msg):
+                        get_pool().mark_dead(next_proxy)
         return False
     finally:
         await page.close()
