@@ -220,6 +220,34 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
         # Không tìm được giá qua chiến lược riêng (trang đổi cấu trúc?) — rơi xuống các chiến
         # lược chung bên dưới như lưới an toàn, KHÔNG return ở đây.
 
+    # 0b. An Phát PC: kiểm tra container kho theo vùng TRƯỚC KHI đọc giá.
+    # Đồng bộ 100% với logic check_stock trong discover_anphat.py (Mode A):
+    # Đếm số link showroom <a> trong #js-in-stock. Nếu render xong mà có 0 link → HẾT HÀNG.
+    if competitor == "An Phát PC":
+        try:
+            # Poll tối đa ~4.5 giây (9 lần x 500ms) để chờ block showroom render (ở Mode B ta không muốn chờ quá lâu)
+            prev_links = -2
+            rendered = False
+            for _ in range(9):
+                # Chạy JS đếm số lượng link a[href] bên trong #js-in-stock
+                n = await page.evaluate("""() => {
+                    const ins = document.querySelector('#js-in-stock');
+                    return ins ? ins.querySelectorAll('a[href]').length : -1;
+                }""")
+                if n != -1 and n == prev_links:
+                    rendered = True
+                    break
+                prev_links = n
+                await page.wait_for_timeout(500)
+            
+            if rendered and prev_links == 0:
+                print(f"  [An Phát] #js-in-stock có 0 showroom → HẾT HÀNG")
+                return 0, False
+        except Exception as e:
+            pass  # Nếu lỗi, tiếp tục strategies bên dưới để không bỏ qua giá trị hợp lệ
+
+
+
     html = await page.content()
     availability_stock: bool | None = None
 
