@@ -128,6 +128,11 @@ def deactivate_source(client: Client, product_sku: str, competitor: str) -> None
     ).execute()
 
 
+def deactivate_all_sources(client: Client, product_sku: str) -> None:
+    """Tắt tất cả sources của SKU này (ví dụ khi TNC ngừng kinh doanh sản phẩm)."""
+    client.table("sources").update({"active": False}).eq("product_sku", product_sku).execute()
+
+
 def ensure_competitor(client: Client, name: str, is_self: bool = False) -> None:
     """Đăng ký một competitor vào registry nếu chưa tồn tại.
 

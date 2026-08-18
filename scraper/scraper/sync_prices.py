@@ -23,7 +23,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from .config import is_old_listing_name
-from .db import deactivate_source, get_client, insert_price, fetch_active_sources
+from .db import deactivate_source, deactivate_all_sources, get_client, insert_price, fetch_active_sources
 from .proxy_pool import get_pool, is_proxy_error
 from .stock import is_out_of_stock
 
@@ -450,6 +450,18 @@ async def scrape_source(
         is_slow = competitor in SLOW_COMPETITORS
         await _wait_price_rendered(page, competitor, timeout=20000 if is_slow else 10000)
         
+        # Kiểm tra nếu TNC (Thành Nhân) ngừng kinh doanh sản phẩm
+        if competitor == "Thành Nhân":
+            body_text = await page.locator("body").inner_text()
+            if re.search(r"ngừng\s+kinh\s+doanh|ngưng\s+kinh\s+doanh|ngung\s+kinh\s+doanh", body_text, re.IGNORECASE):
+                print(f"  [DISCONTINUED] Thành Nhân - {sku}: ngừng kinh doanh, tắt toàn bộ sources của SKU này")
+                if not dry_run:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, deactivate_all_sources, client, sku)
+                if failures is not None:
+                    _record_failure(failures, competitor, sku, url, "TNC ngừng kinh doanh sản phẩm này")
+                return False
+
         # Một URL có thể bị shop đổi sang hàng cũ/demo sau khi đã ghép SKU.
         # Không ghi giá đó và tắt source để cache lần refresh sau loại nó.
         title = await page.title()
