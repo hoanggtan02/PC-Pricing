@@ -45,9 +45,19 @@ CONCURRENCY_LIMIT = 5  # Số luồng cào song song tối đa (mặc định ch
 # ít được cache. 15 vốn là mức concurrency CAO NHẤT trong toàn hệ thống (cao hơn cả mặc định 5) —
 # hạ xuống 6 để giảm áp lực CPU/mạng đồng thời mà vẫn nhanh hơn đáng kể so với chạy tuần tự.
 # Nếu sau khi hạ vẫn còn fail hàng loạt, cân nhắc hạ tiếp hoặc điều tra thêm theo hướng khác.
+#
+# "An Phát PC": thêm cùng đợt (2026-08) — người dùng xác nhận An Phát cũng gặp CHUỖI FAIL "Không
+# tìm thấy giá trên trang" tương tự Thành Nhân. An Phát vốn đã được coi là site "nặng" (xem
+# SLOW_COMPETITORS bên dưới, và ghi chú trong discover_anphat.py: "An Phát giữ các kết nối mạng
+# luôn mở (do tracker)", "trang An Phát có menu danh mục khổng lồ" khiến layout rất nặng), nhưng
+# TRƯỚC ĐÂY chưa từng bị giảm concurrency riêng — vẫn chạy ở mức mặc định 5 dù chạy standalone
+# trong job riêng (sync.yml matrix, mỗi competitor 1 job). 5 tab song song trên cùng runner CI vẫn
+# có thể đủ để trang tracker-nặng này chưa kịp render xong giá lúc page.content() được gọi. Hạ
+# xuống 3 để giảm áp lực, tương tự hướng đã áp dụng cho Thành Nhân.
 PER_COMPETITOR_CONCURRENCY = {
     "CellphoneS": 2,
     "Thành Nhân": 6,
+    "An Phát PC": 3,
 }
 
 # Ngưỡng GIÁ TỐI THIỂU hợp lệ. Không sản phẩm nào trong catalog (laptop, linh kiện, phụ kiện...)
