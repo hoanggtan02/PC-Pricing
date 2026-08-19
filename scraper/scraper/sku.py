@@ -20,6 +20,13 @@ _HP_CODE = re.compile(r"^(?=.*[a-z])(?=.*\d)[a-z0-9]{6,7}$", re.I)  # Mã part c
 _ACER_CODE = re.compile(r"\bN[XH][.\-][A-Z0-9]+[.\-][A-Z0-9]+\b", re.I)  # Mã NX./NH. của Acer
 _SER_ALPHA = re.compile(r"^[A-Z]{1,3}\d{1,4}[A-Z]{1,4}$", re.I)  # Series Asus/MSI: P1403CVA, B14WEK
 _SER_DIGIT = re.compile(r"^[A-Z]{1,4}\d{2,4}[A-Z]?$", re.I)  # Series Acer: ANV15, AG15, A515
+# NHÁNH MỚI — không sửa 2 pattern trên để không ảnh hưởng các máy đã khớp đúng từ trước.
+# MSI còn dùng một dạng "mã hộp" riêng: 1 chữ + 1 số + 4-7 chữ, ví dụ D2XWFKG (Crosshair 16 HX
+# AI). Dạng này không lọt _SER_ALPHA (quá nhiều chữ ở đuôi, tối đa 4) lẫn _SER_DIGIT (đòi 2-4 số),
+# nên trước đây model_code() không nhận ra series -> rơi xuống nhánh fallback của Dell và vô tình
+# vơ nhầm số cấu hình (VD: "RTX 5060" -> SKU sai thành "5060"). Chỉ dùng làm phương án CUỐI CÙNG,
+# sau khi _SER_ALPHA/_SER_DIGIT đã thử và không khớp — xem chỗ dùng trong model_code().
+_MSI_BOX_CODE = re.compile(r"^[A-Z]\d[A-Z]{4,7}$", re.I)  # Mã hộp MSI: D2XWFKG, v.v.
 _MODEL_SKIP = {
     "i3", "i5", "i7", "i9", "r5", "r7", "r9", "core", "ryzen", "intel", "amd",
     "ultra", "oled", "ai", "hx", "gaming", "laptop",
@@ -44,6 +51,13 @@ def model_code(name: str | None, slug: str | None) -> str | None:
         if idx is None:
             idx = next(
                 (i for i, t in enumerate(toks) if _SER_DIGIT.match(t) and i < len(toks) - 1),
+                None,
+            )
+        # NHÁNH MỚI: chỉ thử khi cả _SER_ALPHA lẫn _SER_DIGIT đều không tìm ra token series nào
+        # (idx vẫn None) — không đổi thứ tự hay kết quả của 2 nhánh cũ ở trên.
+        if idx is None:
+            idx = next(
+                (i for i, t in enumerate(toks) if _MSI_BOX_CODE.match(t) and i < len(toks) - 1),
                 None,
             )
         if idx is None:
