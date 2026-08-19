@@ -20,7 +20,7 @@ _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "sources.yaml
 
 # Hàng cũ/demo thường có giá thấp bất thường và không thể so sánh với hàng mới.
 # Áp dụng cho mọi danh mục, kể cả Laptop (vốn không luôn dùng name_exclude theo category).
-_OLD_LISTING_PATTERN = r"\btray\b|\bdemo\b|\bcũ\b|\blike\b|nhập khẩu|xách tay|\busa\b|xước|cấn"
+_OLD_LISTING_PATTERN = r"\btray\b|\btrầy\b|\bdemo\b|\btrưng\s+bày\b|\btrung\s+bay\b|\bcũ\b|\bcu\b|\blike\b|\blikenew\b|nhập\s+khẩu|nhap\s+khau|xách\s+tay|xach\s+tay|\busa\b|xước|xuoc|cấn|can|\btrôi\s+bảo\s+hành\b|\btroi\s+bao\s+hanh\b|\bactive\b|\bđã\s+kích\s+hoạt\b|\bda\s+kich\s+hoat\b|\bkhông\s+hộp\b|\bkhong\s+hop\b|đổi\s+trả|doi\s+tra"
 
 
 @functools.lru_cache(maxsize=1)

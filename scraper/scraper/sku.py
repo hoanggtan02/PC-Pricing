@@ -1349,7 +1349,7 @@ _CATEGORY_SKU = {
 
 
 _USED_RE = re.compile(
-    r"(?i)\b(tray|demo|cũ|cu|like|nhập\s+khẩu|nhap\s+khau|xách\s+tay|xach\s+tay|usa|xước|xuoc|cấn|can)\b"
+    r"(?i)\b(tray|trầy|demo|trưng\s+bày|trung\s+bay|cũ|cu|like|likenew|nhập\s+khẩu|nhap\s+khau|xách\s+tay|xach\s+tay|usa|xước|xuoc|cấn|can|trôi\s+bảo\s+hành|troi\s+bao\s+hanh|active|đã\s+kích\s+hoạt|da\s+kich\s+hoat|không\s+hộp|khong\s+hop|đổi\s+trả|doi\s+tra)\b"
 )
 
 
