@@ -16,6 +16,14 @@ name: Weekend price discover (Mode A - Discovery)
 # `prepare` build danh sách leg từ config (tự động thêm/bớt khi sources.yaml đổi, không cần sửa
 # YAML tay). `summary` gom log thời gian + lỗi từ tất cả leg lại thành MỘT bảng tổng kết như cũ.
 # `refresh` chạy MỘT LẦN DUY NHẤT sau khi mọi leg xong.
+#
+# FIX (2026-08): job hay bị TREO VÔ THỜI HẠN ở bước "Install dependencies", kẹt ở dòng
+# "Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease" — apt-get bên trong
+# `playwright install --with-deps` cố kết nối archive.ubuntu.com/security.ubuntu.com qua IPv6,
+# route IPv6 của runner chập chờn nên TREO thay vì fail/timeout. Sửa bằng 2 việc:
+#   1. Ép apt dùng IPv4 (Acquire::ForceIPv4) TRƯỚC khi cài — fix chính cho đúng triệu chứng này.
+#   2. Thêm timeout-minutes cho step cài đặt — nếu vẫn dính sự cố mirror, step FAIL trong vài
+#      phút thay vì "đứng" hàng giờ chiếm slot chạy song song (ta có ~30 leg × max-parallel 10).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -102,7 +110,20 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('scraper/requirements.txt') }}
 
+      # FIX: apt-get bên trong "playwright install --with-deps" hay TREO VÔ THỜI HẠN khi kết nối
+      # archive.ubuntu.com/security.ubuntu.com qua IPv6 (route IPv6 của runner chập chờn). Ép
+      # dùng IPv4 trước khi cài để tránh treo — đây là nguyên nhân chính của log kẹt ở dòng
+      # "Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease".
+      - name: Force apt to use IPv4 (fix hanging on archive.ubuntu.com)
+        run: |
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::Retries "3";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+
       - name: Install dependencies
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: |
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium

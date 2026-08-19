@@ -11,6 +11,14 @@ name: Daily price sync (Mode B - Link crawl)
 # `summary` gom danh sách link cào lỗi (competitor/sku/url/reason) của TẤT CẢ job lại thành một
 # báo cáo duy nhất — chạy dù có job nào lỗi (if: always()).
 # `refresh` làm mới cache latest_prices_cache CHỈ MỘT LẦN, sau khi mọi job sync xong.
+#
+# FIX (2026-08): job hay bị TREO VÔ THỜI HẠN ở bước "Install dependencies", kẹt ở dòng
+# "Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease" — apt-get bên trong
+# `playwright install --with-deps` cố kết nối archive.ubuntu.com/security.ubuntu.com qua IPv6,
+# route IPv6 của runner chập chờn nên TREO thay vì fail/timeout. Sửa bằng 2 việc:
+#   1. Ép apt dùng IPv4 (Acquire::ForceIPv4) TRƯỚC khi cài — fix chính cho đúng triệu chứng này.
+#   2. Thêm timeout-minutes cho step cài đặt — nếu vẫn dính sự cố mirror, step FAIL trong vài
+#      phút thay vì "đứng" hàng giờ chiếm slot chạy song song (9 job matrix theo cửa hàng).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -62,7 +70,20 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('scraper/requirements.txt') }}
 
+      # FIX: apt-get bên trong "playwright install --with-deps" hay TREO VÔ THỜI HẠN khi kết nối
+      # archive.ubuntu.com/security.ubuntu.com qua IPv6 (route IPv6 của runner chập chờn). Ép
+      # dùng IPv4 trước khi cài để tránh treo — đây là nguyên nhân chính của log kẹt ở dòng
+      # "Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease".
+      - name: Force apt to use IPv4 (fix hanging on archive.ubuntu.com)
+        run: |
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::Retries "3";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+
       - name: Install dependencies
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: |
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
