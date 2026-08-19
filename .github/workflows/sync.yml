@@ -19,6 +19,17 @@ name: Daily price sync (Mode B - Link crawl)
 #   1. Ép apt dùng IPv4 (Acquire::ForceIPv4) TRƯỚC khi cài — fix chính cho đúng triệu chứng này.
 #   2. Thêm timeout-minutes cho step cài đặt — nếu vẫn dính sự cố mirror, step FAIL trong vài
 #      phút thay vì "đứng" hàng giờ chiếm slot chạy song song (9 job matrix theo cửa hàng).
+#
+# FIX #2 (bổ sung sau, cùng triệu chứng khác nguyên nhân): "ForceIPv4" chỉ chặn lỗi KHÔNG KẾT
+# NỐI ĐƯỢC (route IPv6 chết → treo ngay từ đầu). Có một lớp lỗi KHÁC: kết nối TCP/TLS đã mở
+# thành công (log in ra "Get:5 ... InRelease [126 kB]" — apt đã biết trước dung lượng file) nhưng
+# quá trình TẢI bị NGHẼN GIỮA CHỪNG (server security.ubuntu.com — endpoint bảo mật dùng chung
+# toàn cầu, không có mirror khu vực nhanh như archive.ubuntu.com — bị quá tải/rate-limit). apt
+# KHÔNG có timeout mặc định cho một kết nối "còn sống nhưng gần như không chảy dữ liệu", nên nó
+# chờ vô thời hạn dù Acquire::Retries đã đặt (Retries chỉ kích hoạt khi apt NHẬN được lỗi, không
+# giúp gì với một tải bị treo im lặng). Thêm Acquire::http::Timeout / Acquire::https::Timeout để
+# ép apt tự huỷ một kết nối treo sau 15s, để Retries có cơ hội thử lại thay vì đứng tới khi chạm
+# timeout-minutes của cả step.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -70,14 +81,20 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('scraper/requirements.txt') }}
 
-      # FIX: apt-get bên trong "playwright install --with-deps" hay TREO VÔ THỜI HẠN khi kết nối
-      # archive.ubuntu.com/security.ubuntu.com qua IPv6 (route IPv6 của runner chập chờn). Ép
-      # dùng IPv4 trước khi cài để tránh treo — đây là nguyên nhân chính của log kẹt ở dòng
-      # "Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease".
+      # FIX: apt-get bên trong "playwright install --with-deps" hay TREO VÔ THỜI HẠN.
+      # Nguyên nhân 1 (đã sửa): kết nối archive.ubuntu.com/security.ubuntu.com qua IPv6 route
+      # chập chờn của runner → không kết nối được ngay từ đầu. Ép ForceIPv4 để tránh.
+      # Nguyên nhân 2 (bổ sung — xem ghi chú FIX #2 ở đầu file): kết nối TCP/TLS mở được nhưng
+      # TẢI BỊ NGHẼN GIỮA CHỪNG ở security.ubuntu.com (endpoint bảo mật dùng chung toàn cầu, dễ
+      # quá tải hơn mirror archive.ubuntu.com). apt không có timeout mặc định cho ca này nên chờ
+      # vô thời hạn — thêm Acquire::http::Timeout / Acquire::https::Timeout để tự huỷ sau 15s và
+      # để Acquire::Retries có cơ hội thử lại.
       - name: Force apt to use IPv4 (fix hanging on archive.ubuntu.com)
         run: |
           echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
           echo 'Acquire::Retries "3";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
 
       - name: Install dependencies
         timeout-minutes: 10

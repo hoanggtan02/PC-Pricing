@@ -14,7 +14,29 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # FIX (2026-08, đồng bộ với scrape.yml/sync.yml): trước đây file này KHÔNG có bước này —
+      # nên "playwright install --with-deps" (gọi apt-get bên trong) có thể TREO VÔ THỜI HẠN, vì
+      # 2 lý do:
+      #   1. Route IPv6 của runner tới archive.ubuntu.com/security.ubuntu.com chập chờn → không
+      #      kết nối được ngay từ đầu. Ép ForceIPv4 để tránh.
+      #   2. Dù kết nối được, security.ubuntu.com (endpoint bảo mật dùng chung toàn cầu, không có
+      #      mirror khu vực nhanh như archive.ubuntu.com) có thể NGHẼN GIỮA CHỪNG khi đang tải
+      #      (log kiểu "Get:5 ... InRelease [126 kB]" rồi đứng im). apt không có timeout mặc định
+      #      cho ca "kết nối còn sống nhưng gần như không chảy dữ liệu" nên chờ vô thời hạn — thêm
+      #      Acquire::http::Timeout / Acquire::https::Timeout để tự huỷ sau 15s, để
+      #      Acquire::Retries có cơ hội thử lại thay vì đứng mãi.
+      - name: Force apt to use IPv4 (fix hanging on archive.ubuntu.com)
+        run: |
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::Retries "3";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+
       - name: Install Playwright
+        # Trước đây KHÔNG có timeout-minutes — nếu apt treo, step ăn hết timeout mặc định của cả
+        # job (nhiều giờ) trước khi fail. Chốt an toàn thấp hơn, fail rõ ràng trong vài phút.
+        timeout-minutes: 10
         run: |
           pip install playwright
           python -m playwright install --with-deps chromium
