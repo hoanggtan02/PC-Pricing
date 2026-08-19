@@ -72,6 +72,57 @@ def model_code(name: str | None, slug: str | None) -> str | None:
         return "-".join(out).upper()
     return None
 
+
+# ── Gigabyte / Lenovo: mã hỗn hợp chữ+số DÀI, không dấu gạch/slash ─────────────────────────────
+# Cả hai hãng đôi khi in mã sản phẩm dưới dạng MỘT khối liền chữ+số dài (Gigabyte: CMHH2VN893SH,
+# CTHH3VN893SH, 9LJR2VNF93SH, 9RC55MF5FJIINIVN000; Lenovo: mã MTM 21MV000PVN, 83F5008WVN) mà
+# model_code() (dành cho Asus/Acer/MSI, đòi hỏi cấu trúc "letters-digits-letters" ngắn kiểu
+# series) không nhận ra. TRƯỚC KHI SỬA, các laptop này (không khớp Apple/HP/Asus/Acer/MSI) rơi
+# thẳng xuống nhánh Dell tổng quát ở cuối _laptop_sku() — vốn chỉ tìm số 4 CHỮ SỐ ĐẦU TIÊN xuất
+# hiện trong tên (_FOUR) hoặc TOKEN CUỐI CÙNG của tên/slug làm phương án cuối cùng — nên vô tình
+# "khoá" nhầm vào một con số cấu hình GPU (RTX 3050/4050/5050/5080/2050), NĂM sản xuất (2024),
+# MÀU (Xám -> XAM), hay hậu tố CPU dính trong slug URL (r5/r7/u7) thay vì mã sản phẩm thật. Hai
+# hàm dưới đây bắt đúng các mã đó, chèn vào _laptop_sku() TRƯỚC khi rơi xuống logic Dell.
+_LONG_MIXED_CODE = re.compile(r"^(?=.*[a-z])(?=.*\d)[a-z0-9]{7,24}$", re.I)
+
+
+def _long_mixed_code(name: str | None, slug: str | None) -> str | None:
+    """Mã hỗn hợp chữ+số DÀI (>=7 ký tự, không dấu gạch/slash) — chọn token DÀI NHẤT khớp, dùng
+    làm phương án CUỐI CÙNG cho các hãng in mã sản phẩm dưới dạng một khối liền (hiện dùng cho
+    Gigabyte khi model_code() không tìm được series ngắn). Token càng dài càng đặc thù/duy nhất,
+    ít khả năng trùng giữa các cấu hình khác nhau. Đọc slug trước (đầy đủ, sạch), sau đó tới name.
+
+    Tự động loại các token spec dính "/" (vd "16GB/ Ram", "13420H/ Ram" — nguồn không tách trên
+    "/" khi split giống model_code()) vì regex neo (^...$) không cho phép ký tự "/" lọt vào giữa;
+    cũng tự loại các token toàn số hoặc toàn chữ (thiếu chữ HOẶC thiếu số) nhờ 2 lookahead.
+    """
+    for src in (slug or "", name or ""):
+        toks = [t for t in re.split(r"[\s\-_()]+", src) if t]
+        cands = [t for t in toks if _LONG_MIXED_CODE.match(t)]
+        if cands:
+            return max(cands, key=len).upper()
+    return None
+
+
+# Mã MTM (Machine Type Model) của Lenovo — định danh DUY NHẤT thật, in giống nhau ở mọi cửa hàng,
+# dạng 2 CHỮ SỐ + 7-9 ký tự chữ/số (tổng 9-11 ký tự): 21MV000PVN, 83F5008WVN, 83GS001SVN,
+# 20YA0039VN. Ràng buộc độ dài này tự nhiên loại các token NGẮN dễ gây nhầm (mã bo mạch/CPU kiểu
+# "16IAX10H"/"15IAX9" chỉ 6-8 ký tự, hậu tố CPU dính trong slug "r5"/"r7"/"u7", năm "2024", hay số
+# cấu hình GPU "2050"/"3050"/"4050"/"5050"/"5080" — tất cả đều NGẮN HƠN 9 ký tự nên không khớp).
+_LENOVO_MTM = re.compile(r"\b\d{2}[a-z0-9]{7,9}\b", re.I)
+
+
+def _lenovo_code(name: str | None, slug: str | None) -> str | None:
+    """Mã MTM của Lenovo, hoặc None nếu không tìm thấy. Đọc slug trước (đầy đủ, sạch), sau đó
+    tới name. Yêu cầu match có ÍT NHẤT một chữ cái (loại trừ khả năng khớp nhầm một chuỗi 9-11
+    chữ số thuần, dù trong thực tế mã MTM Lenovo luôn có chữ)."""
+    for src in (slug or "", name or ""):
+        m = _LENOVO_MTM.search(src)
+        if m and re.search(r"[a-z]", m.group(0), re.I):
+            return m.group(0).upper()
+    return None
+
+
 # Các cụm từ rác mà cửa hàng gắn thêm sau mã model Dell — từ chỉ màu sắc/bảo hành/thương hiệu,
 # không phải là một phần của mã.
 _JUNK = {
@@ -1347,6 +1398,29 @@ def _laptop_sku(name: str | None, url: str | None) -> str:
         mc = model_code(name, slug)
         if mc:
             return mc
+
+    # Gigabyte: dùng chung model_code() (bắt series ngắn kiểu "EG64H"/"AM6J" + hậu tố "4WH"/"6XJ",
+    # ra "EG64H-4WH"/"AM6J-6XJ"); khi KHÔNG tìm được series ngắn (mã đóng thành MỘT khối dài như
+    # "CMHH2VN893SH", "CTHH3VN893SH", "9LJR2VNF93SH", "9RC55MF5FJIINIVN000"), dùng mã hỗn hợp dài
+    # làm phương án cuối — xem ghi chú ở _long_mixed_code(). TRƯỚC KHI SỬA, Gigabyte không có
+    # nhánh riêng nào cả nên rơi thẳng xuống logic Dell bên dưới, vô tình khoá nhầm vào số cấu
+    # hình GPU/năm tìm thấy đầu tiên trong tên (RTX 3050/4050/5050/5080, năm 2024).
+    if re.search(r"\bgigabyte\b", (name or ""), re.I):
+        mc = model_code(name, slug)
+        if mc:
+            return mc
+        lc = _long_mixed_code(name, slug)
+        if lc:
+            return lc
+
+    # Lenovo: mã MTM (Machine Type Model) — định danh DUY NHẤT thật, in giống nhau ở mọi cửa
+    # hàng, dạng 2 chữ số + 7-9 ký tự chữ/số (21MV000PVN, 83F5008WVN, 83GS001SVN, 20YA0039VN) —
+    # xem _lenovo_code(). TRƯỚC KHI SỬA, Lenovo cũng rơi xuống logic Dell bên dưới, vô tình khoá
+    # nhầm vào màu ("Xám"->XAM) hay hậu tố CPU dính trong slug URL (r5/r7/u7).
+    if re.search(r"\blenovo\b", (name or ""), re.I):
+        lc = _lenovo_code(name, slug)
+        if lc:
+            return lc
 
     # Dell 1: mã trần 8 chữ số.
     m = _EIGHT.search(slug) or _EIGHT.search((name or "").lower())
