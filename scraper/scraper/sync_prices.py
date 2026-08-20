@@ -463,9 +463,21 @@ async def scrape_source(
                 return False
 
         title = await page.title()
-        is_used = is_old_listing_name(title)
+        # Kiểm tra thêm thẻ h1 vì nhiều site (Hacom, CellphoneS...) ghi rõ
+        # "(Tray)", "(Chính hãng không vỏ hộp)"... trong h1 nhưng KHÔNG đưa
+        # vào <title> của trang — chỉ dùng page.title() sẽ bỏ sót các trường hợp này.
+        h1_text = ""
+        try:
+            h1_el = page.locator("h1").first
+            if await h1_el.count() > 0:
+                h1_text = (await h1_el.inner_text(timeout=2000)).strip()
+        except Exception:
+            pass
+        is_used = is_old_listing_name(title) or is_old_listing_name(h1_text)
         if is_used:
-            print(f"  [USED] {competitor} - {sku}: phát hiện hàng cũ/demo ({title[:80]})")
+            detected_in = "title" if is_old_listing_name(title) else "h1"
+            label = title[:80] if is_old_listing_name(title) else h1_text[:80]
+            print(f"  [USED] {competitor} - {sku}: phát hiện hàng cũ/demo ({detected_in}: {label})")
         if not dry_run:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, update_source_used, client, sku, competitor, is_used)
@@ -552,11 +564,18 @@ async def scrape_source(
                     await _wait_price_rendered(retry_pg, competitor, timeout=15000)
                     retry_price, retry_stock = await extract_price_generic(retry_pg, competitor)
                     retry_title = await retry_pg.title()
+                    retry_h1 = ""
+                    try:
+                        retry_h1_el = retry_pg.locator("h1").first
+                        if await retry_h1_el.count() > 0:
+                            retry_h1 = (await retry_h1_el.inner_text(timeout=2000)).strip()
+                    except Exception:
+                        pass
                     await retry_pg.close()
                     await retry_page.close()
                     if retry_price is not None:
                         in_stock_retry = retry_stock if retry_stock is not None else retry_price > 0
-                        is_used_retry = is_old_listing_name(retry_title)
+                        is_used_retry = is_old_listing_name(retry_title) or is_old_listing_name(retry_h1)
                         if is_used_retry:
                             print(f"  [USED] {competitor} - {sku}: phát hiện hàng cũ/demo (retry) ({retry_title[:80]})")
                         print(f"  ✅ {competitor} - {sku}: {retry_price:,} VND (retry thành công via {next_proxy['server']})")
