@@ -35,6 +35,11 @@ name: Weekend price discover (Mode A - Discovery)
 # giúp gì với một tải bị treo im lặng). Thêm Acquire::http::Timeout / Acquire::https::Timeout để
 # ép apt tự huỷ một kết nối treo sau 15s, để Retries có cơ hội thử lại thay vì đứng tới khi chạm
 # timeout-minutes của cả step.
+#
+# FIX #3 (2026-08, bổ sung): step vẫn thỉnh thoảng chạm hết timeout-minutes=10 dù đã có 2 fix
+# trên (khi ~30 leg matrix chạy song song, mirror apt/pip có lúc chậm hơn 10 phút chứ không hẳn
+# treo im lặng). Nâng lên 30 phút — vẫn thấp hơn nhiều so với trần cứng 6h/job của GitHub-hosted
+# runner, đủ để chịu được các đợt mirror chậm mà không cần re-run tay liên tục.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -137,7 +142,7 @@ jobs:
           echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
 
       - name: Install dependencies
-        timeout-minutes: 10
+        timeout-minutes: 30
         env:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
