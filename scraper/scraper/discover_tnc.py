@@ -100,12 +100,13 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     # Laptop giữ nguyên BRANDS map per-brand + bộ lọc brand. Các danh mục khác chạy theo danh mục:
     # một URL cho cả danh mục, giữ lại theo name_match của danh mục.
     if category == "laptop":
-        url_tpls, want, name_re, excl_re = [BRANDS[brand]], brand.lower(), None, None
+        url_tpls, want, name_re = [BRANDS[brand]], brand.lower(), None
+        excl_re = name_exclude_re("laptop", include_old=True)
     else:
         # Một category có thể gộp NHIỀU trang catalog TNC (vd router = wireless + router doanh nghiệp).
         url_tpls, want = tnc_urls(category), None
         name_re = name_match_re(category)
-        excl_re = name_exclude_re(category)   # loại tên khớp name_exclude (vd PC build của TNC)
+        excl_re = name_exclude_re(category, include_old=True)   # loại tên khớp name_exclude (vd PC build của TNC)
     if not url_tpls:
         return []
     results: list[dict] = []

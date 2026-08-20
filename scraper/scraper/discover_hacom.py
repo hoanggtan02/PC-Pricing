@@ -29,7 +29,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 from .browser import goto_with_retry
-from .config import categories, name_exclude_re, name_match_re, resolve_url
+from .config import categories, is_old_listing_name, name_exclude_re, name_match_re, resolve_url
 from .db import (
     ensure_competitor,
     fetch_catalog_skus,
@@ -276,13 +276,14 @@ def main() -> int:
         sku = item["sku"]
         in_stock = stock.get(item.get("url"), True)
         flag = "" if in_stock else "  [OUT OF STOCK]"
+        is_used = is_old_listing_name(item.get("name", ""))
         print(f"- [MỚI] {sku}: {item['price']:,} VND{flag}  ({item['name'][:55]})")
         source_rows.append(
-            {"product_sku": sku, "competitor": COMPETITOR, "url": item.get("url") or fallback_url}
+            {"product_sku": sku, "competitor": COMPETITOR, "url": item.get("url") or fallback_url, "is_used": is_used}
         )
         price_rows.append({
             "product_sku": sku, "competitor": COMPETITOR, "price": item["price"],
-            "in_stock": in_stock,
+            "in_stock": in_stock, "is_used": is_used,
         })
 
     # SKU cũ: chỉ refresh URL, KHÔNG ghi giá/tồn kho lại.

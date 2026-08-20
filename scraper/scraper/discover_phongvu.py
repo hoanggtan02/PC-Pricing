@@ -30,7 +30,7 @@ import re
 import sys
 
 from .browser import browser_session, goto_with_retry
-from .config import categories, name_exclude_re, name_match_re, resolve_url
+from .config import categories, is_old_listing_name, name_exclude_re, name_match_re, resolve_url
 from .db import (
     ensure_competitor,
     fetch_catalog_skus,
@@ -191,15 +191,16 @@ def main() -> int:
         in_stock = item.get("in_stock", True)
         flag = "" if in_stock else "  [OUT OF STOCK]"
         is_new = sku not in existing
+        is_used = is_old_listing_name(item.get("name", ""))
         tag = "[MỚI] " if is_new else ""
         print(f"- {tag}{sku}: {item['price']:,} VND{flag}  ({(item['name'] or item['url'])[:45]})")
         source_rows.append(
-            {"product_sku": sku, "competitor": COMPETITOR, "url": item.get("url") or fallback_url}
+            {"product_sku": sku, "competitor": COMPETITOR, "url": item.get("url") or fallback_url, "is_used": is_used}
         )
         # Chỉ ghi giá cho SKU CHƯA từng có source ở competitor này (sản phẩm mới phát hiện).
         if is_new:
             price_rows.append(
-                {"product_sku": sku, "competitor": COMPETITOR, "price": item["price"], "in_stock": in_stock}
+                {"product_sku": sku, "competitor": COMPETITOR, "price": item["price"], "in_stock": in_stock, "is_used": is_used}
             )
             new_count += 1
 

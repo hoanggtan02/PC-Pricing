@@ -128,6 +128,13 @@ def deactivate_source(client: Client, product_sku: str, competitor: str) -> None
     ).execute()
 
 
+def update_source_used(client: Client, product_sku: str, competitor: str, is_used: bool = True) -> None:
+    """Cập nhật trạng thái hàng cũ/demo cho source."""
+    client.table("sources").update({"is_used": is_used}).match(
+        {"product_sku": product_sku, "competitor": competitor}
+    ).execute()
+
+
 def deactivate_all_sources(client: Client, product_sku: str) -> None:
     """Tắt tất cả sources của SKU này (ví dụ khi TNC ngừng kinh doanh sản phẩm)."""
     client.table("sources").update({"active": False}).eq("product_sku", product_sku).execute()
@@ -147,7 +154,7 @@ def ensure_competitor(client: Client, name: str, is_self: bool = False) -> None:
 
 
 def insert_price(
-    client: Client, product_sku: str, competitor: str, price: int, in_stock: bool = True
+    client: Client, product_sku: str, competitor: str, price: int, in_stock: bool = True, is_used: bool = False
 ) -> None:
     """Thêm một bản ghi giá vào price_history, khóa theo (product_sku, competitor).
 
@@ -161,6 +168,7 @@ def insert_price(
             "price": price,
             "currency": "VND",
             "in_stock": in_stock,
+            "is_used": is_used,
         }
     ).execute()
 
@@ -216,5 +224,5 @@ def insert_prices(client: Client, rows: list[dict]) -> None:
     product_sku, competitor, price, in_stock; currency mặc định 'VND' được thêm ở đây."""
     if rows:
         client.table("price_history").insert(
-            [{"currency": "VND", **r} for r in rows]
+            [{"currency": "VND", "is_used": r.get("is_used", False), **r} for r in rows]
         ).execute()

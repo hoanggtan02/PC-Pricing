@@ -23,7 +23,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from .config import is_old_listing_name
-from .db import deactivate_source, deactivate_all_sources, get_client, insert_price, fetch_active_sources
+from .db import deactivate_source, deactivate_all_sources, update_source_used, get_client, insert_price, fetch_active_sources
 from .proxy_pool import get_pool, is_proxy_error
 from .stock import is_out_of_stock
 
@@ -462,17 +462,13 @@ async def scrape_source(
                     _record_failure(failures, competitor, sku, url, "TNC ngừng kinh doanh sản phẩm này")
                 return False
 
-        # Một URL có thể bị shop đổi sang hàng cũ/demo sau khi đã ghép SKU.
-        # Không ghi giá đó và tắt source để cache lần refresh sau loại nó.
         title = await page.title()
-        if is_old_listing_name(title):
-            print(f"  [OLD] {competitor} - {sku}: tắt source ({title[:80]})")
-            if not dry_run:
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, deactivate_source, client, sku, competitor)
-            if failures is not None:
-                _record_failure(failures, competitor, sku, url, f"Hàng cũ/demo, đã tắt source ({title[:60]})")
-            return False
+        is_used = is_old_listing_name(title)
+        if is_used:
+            print(f"  [USED] {competitor} - {sku}: phát hiện hàng cũ/demo ({title[:80]})")
+        if not dry_run:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, update_source_used, client, sku, competitor, is_used)
 
         price, availability_stock = await extract_price_generic(page, competitor)
 
@@ -499,7 +495,7 @@ async def scrape_source(
             if not dry_run:
                 # Ghi giá vào DB
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, insert_price, client, sku, competitor, price, in_stock)
+                await loop.run_in_executor(None, insert_price, client, sku, competitor, price, in_stock, is_used)
             return True
         else:
             try:
@@ -555,16 +551,21 @@ async def scrape_source(
                     await retry_pg.goto(url, wait_until="commit", timeout=GOTO_TIMEOUT_MS["proxy"])
                     await _wait_price_rendered(retry_pg, competitor, timeout=15000)
                     retry_price, retry_stock = await extract_price_generic(retry_pg, competitor)
+                    retry_title = await retry_pg.title()
                     await retry_pg.close()
                     await retry_page.close()
                     if retry_price is not None:
                         in_stock_retry = retry_stock if retry_stock is not None else retry_price > 0
+                        is_used_retry = is_old_listing_name(retry_title)
+                        if is_used_retry:
+                            print(f"  [USED] {competitor} - {sku}: phát hiện hàng cũ/demo (retry) ({retry_title[:80]})")
                         print(f"  ✅ {competitor} - {sku}: {retry_price:,} VND (retry thành công via {next_proxy['server']})")
                         if results is not None:
                             results["last_price"] = retry_price
                         if not dry_run:
                             loop = asyncio.get_event_loop()
-                            await loop.run_in_executor(None, insert_price, client, sku, competitor, retry_price, in_stock_retry)
+                            await loop.run_in_executor(None, update_source_used, client, sku, competitor, is_used_retry)
+                            await loop.run_in_executor(None, insert_price, client, sku, competitor, retry_price, in_stock_retry, is_used_retry)
                         return True
                 except Exception as retry_err:
                     retry_msg = str(retry_err).splitlines()[0][:80]

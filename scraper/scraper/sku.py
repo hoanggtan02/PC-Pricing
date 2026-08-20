@@ -1361,9 +1361,6 @@ def derive_sku(name: str | None, url: str | None, category: str = "Laptop") -> s
     when it can't extract an identity, so the caller ingests it TNC-only / skips the match.
     See docs/sku-matching.md.
     """
-    if name and _USED_RE.search(name):
-        return None
-
     if category != "Laptop":
 
         fn = _CATEGORY_SKU.get(category.lower())

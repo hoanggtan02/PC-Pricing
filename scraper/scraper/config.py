@@ -54,11 +54,14 @@ def name_match_re(category: str) -> re.Pattern | None:
     return re.compile(pat, re.IGNORECASE) if pat else None
 
 
-def name_exclude_re(category: str) -> re.Pattern | None:
+def name_exclude_re(category: str, include_old: bool = False) -> re.Pattern | None:
     """Regex loại BỎ — sản phẩm khớp mẫu này bị loại dù đã khớp name_match (ví dụ giá đỡ/tay treo
-    màn hình: tên chứa 'màn hình' nhưng không phải màn hình). None nếu category không cấu hình."""
+    màn hình: tên chứa 'màn hình' nhưng không phải màn hình)."""
     pat = category_meta(category).get("name_exclude")
-    combined = "|".join(p for p in (pat, _OLD_LISTING_PATTERN) if p)
+    pats = [p for p in (pat, _OLD_LISTING_PATTERN if include_old else None) if p]
+    if not pats:
+        return None
+    combined = "|".join(pats)
     return re.compile(combined, re.IGNORECASE)
 
 

@@ -29,7 +29,7 @@ from playwright.sync_api import sync_playwright
 
 from .brand import brand_of
 from .browser import assert_parsed, goto_with_retry
-from .config import categories, name_exclude_re, name_match_re, resolve_url
+from .config import categories, is_old_listing_name, name_exclude_re, name_match_re, resolve_url
 from .db import (
     ensure_competitor,
     fetch_catalog_skus,
@@ -184,16 +184,18 @@ def main() -> int:
         in_stock = item.get("in_stock", True)
         flag = "" if in_stock else "  [OUT OF STOCK]"
         is_new = sku not in existing
+        is_used = is_old_listing_name(item.get("name", ""))
         tag = "[MỚI] " if is_new else ""
         print(f"- {tag}{sku}: {item['price']:,} VND{flag}  ({item['name'][:50]})")
         source_rows.append(
             {"product_sku": sku, "competitor": COMPETITOR,
-             "url": item.get("url") or (BRANDS[args.brand] if args.category == "laptop" else None)}
+             "url": item.get("url") or (BRANDS[args.brand] if args.category == "laptop" else None),
+             "is_used": is_used}
         )
         # Chỉ ghi giá cho SKU CHƯA từng có source ở competitor này (sản phẩm mới phát hiện).
         if is_new:
             price_rows.append(
-                {"product_sku": sku, "competitor": COMPETITOR, "price": item["price"], "in_stock": in_stock}
+                {"product_sku": sku, "competitor": COMPETITOR, "price": item["price"], "in_stock": in_stock, "is_used": is_used}
             )
             new_count += 1
 
