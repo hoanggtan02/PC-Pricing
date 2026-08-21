@@ -1,6 +1,7 @@
 # Secrets — never commit
 .env
 *.local
+supabase-config.php
 
 # Python
 __pycache__/
