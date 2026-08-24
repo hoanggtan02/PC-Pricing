@@ -20,8 +20,7 @@ _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "sources.yaml
 
 # Hàng cũ/demo thường có giá thấp bất thường và không thể so sánh với hàng mới.
 # Áp dụng cho mọi danh mục, kể cả Laptop (vốn không luôn dùng name_exclude theo category).
-_OLD_LISTING_PATTERN = r"\btray\b|\btrầy\b|\bdemo\b|\btrưng\s+bày\b|\btrung\s+bay\b|\bcũ\b|\bcu\b|\blike\b|\blikenew\b|\bnhập\s+khẩu\b|\bnhap\s+khau\b|\bxách\s+tay\b|\bxach\s+tay\b|\busa\b|\bxước\b|\bxuoc\b|\bcấn\b|\bcan\b|\btrôi\s+bảo\s+hành\b|\btroi\s+bao\s+hanh\b|\bactive\b|\bđã\s+kích\s+hoạt\b|\bda\s+kich\s+hoat\b|\bkhông\s+(?:vỏ\s+)?hộp\b|\bkhong\s+(?:vo\s+)?hop\b|\bđổi\s+trả\b|\bdoi\s+tra\b|\bno\s+box\b|\bqsd\b|\bqua\s+sử\s+dụng\b|\bqua\s+su\s+dung\b"
-
+_OLD_LISTING_PATTERN = r"\btray\b|\btrầy\b|\bdemo\b|\btrưng\s+bày\b|\btrung\s+bay\b|\bcũ\b|\bcu\b|\blike\b|\blikenew\b|\bnhập\s+khẩu\b|\bnhap\s+khau\b|\bxách\s+tay\b|\bxach\s+tay\b|\busa\b|\bxước\b|\bxuoc\b|\bcấn\b|\bcan\b|\btrôi\s+bảo\s+hành\b|\btroi\s+bao\s+hanh\b|\bactive\b|\bđã\s+kích\s+hoạt\b|\bda\s+kich\s+hoat\b|\bkhông\s+(?:vỏ\s+)?hộp\b|\bkhong\s+(?:vo\s+)?hop\b|\bđổi\s+trả\b|\bdoi\s+tra\b|\bno\s+box\b|\bnobox\b|\bqsd\b|\bqua\s+sử\s+dụng\b|\bqua\s+su\s+dung\b"
 
 @functools.lru_cache(maxsize=1)
 def _config() -> dict:
