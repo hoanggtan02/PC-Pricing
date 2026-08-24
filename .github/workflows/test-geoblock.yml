@@ -34,6 +34,13 @@ jobs:
       - name: Test FPT Shop (direct, no proxy)
         run: python test_geoblock_direct.py fptshop
         if: always()
+      # THÊM (2026-08): category "camera" fail 100% trên CI thật (net::ERR_CONNECTION_TIMED_OUT)
+      # nhưng fetch thủ công lại thấy trang tải bình thường — cần biết CHÍNH XÁC IP của GitHub
+      # Actions runner có bị TGDĐ chặn/rate-limit hay không, trước khi quyết định có cần proxy VN
+      # cho TGDĐ hay không (xem ghi chú "FALLBACK PROXY" trong discover_tgdd.py).
+      - name: Test TGDD (direct, no proxy)
+        run: python test_geoblock_direct.py tgdd
+        if: always()
       - name: Upload evidence (screenshots/html)
         if: always()
         uses: actions/upload-artifact@v6

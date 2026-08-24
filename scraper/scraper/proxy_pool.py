@@ -173,18 +173,13 @@ def _parse_proxy_list(raw: str) -> list[dict]:
     return proxies
 
 
-# URL mặc định lấy danh sách proxy VN MIỄN PHÍ từ ProxyScrape — trả về TEXT THUẦN, mỗi dòng một
-# proxy dạng "ip:port" (không kèm scheme/username/password). Format này đã tương thích thẳng với
-# _parse_proxy_list()/_normalize_server() ở trên — không cần code parse riêng.
-# Đổi nguồn (vd đổi country, đổi sang site free-proxy khác) qua biến môi trường PROXY_SCRAPE_URL.
+
 DEFAULT_PROXYSCRAPE_URL = (
     "https://api.proxyscrape.com/v4/free-proxy-list/get"
     "?request=display_proxies&proxy_format=ipport&format=text&country=vn"
 )
 
-# URL mặc định lấy danh sách proxy VN MIỄN PHÍ từ FineProxy — trả về JSON (KHÁC hẳn ProxyScrape,
-# xem _parse_fineproxy_response() để biết cấu trúc thực tế đã xác minh). Đổi nguồn qua
-# PROXY_FINEPROXY_URL; tắt riêng nguồn này (giữ ProxyScrape) qua PROXY_FINEPROXY_FETCH=0.
+
 DEFAULT_FINEPROXY_URL = "https://fineproxy.org/vi/wp-json/fineproxy/v1/free-proxies/vn"
 
 
@@ -203,26 +198,6 @@ def _fetch_remote_proxy_list(url: str, timeout: float = 10.0) -> str:
 
 
 def _parse_fineproxy_response(raw: str) -> list[dict]:
-    """Parse phản hồi JSON của FineProxy free-proxy API. Cấu trúc thực tế đã xác minh (2026-08):
-
-        {"country":"VN","total":7,"generated_at":...,"count":7,"rows":[
-            {"ip":"14.161.10.46","port":80,"protos":["HTTP","SOCKS4","SOCKS5"],
-             "anon":"anon","city":"Ho Chi Minh City","isp":"...","latency":867,
-             "up":100,"speed":2076,"score":44,"last_checked":...},
-            ...
-        ]}
-
-    Chỉ lấy proxy có "HTTP" trong `protos` — code luôn chuẩn hoá scheme thành "http://"
-    (_normalize_server), nên một proxy CHỈ hỗ trợ SOCKS4/5 (không có "HTTP", ví dụ các proxy
-    "trans" cổng 1080 SOCKS4-only gặp trong mẫu thực tế) sẽ bị Playwright từ chối kết nối nếu vẫn
-    ép nó qua scheme http://. Sắp theo `score` GIẢM DẦN (nếu có) để proxy điểm cao hơn được
-    health-check trước — không bắt buộc đúng (health-check + rotate ở ProxyPool vẫn lo phần còn
-    lại), chỉ là một ưu tiên nhẹ, không ảnh hưởng tính đúng đắn nếu FineProxy đổi/bỏ field "score".
-
-    Không raise khi cấu trúc đổi/lỗi (JSON hỏng, thiếu "rows", v.v.) — trả về [] để _load_proxies()
-    lặng lẽ rơi xuống nguồn khác (ProxyScrape / PROXY_SERVER), giống hệt cách _fetch_remote_proxy_list
-    đã xử lý lỗi mạng.
-    """
     try:
         data = json.loads(raw)
     except (ValueError, TypeError):

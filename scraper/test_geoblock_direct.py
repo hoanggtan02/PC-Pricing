@@ -1,10 +1,17 @@
-"""Test IP hiện tại (KHÔNG proxy) có bị Phong Vũ / FPT Shop chặn hay không.
+"""Test IP hiện tại (KHÔNG proxy) có bị Phong Vũ / FPT Shop / TGDĐ chặn hay không.
 Không cần DB, không cần proxy. Chạy trên máy bạn (VN) HOẶC trên GitHub Actions (non-VN)
 để so sánh trực tiếp.
 
 Cách dùng:
     python test_geoblock_direct.py phongvu
     python test_geoblock_direct.py fptshop
+    python test_geoblock_direct.py tgdd
+
+TGDĐ được thêm vào (2026-08) sau khi category "camera" fail 100% trên CI với
+net::ERR_CONNECTION_TIMED_OUT / Page.goto timeout — nghi IP dải GitHub Actions runner bị TGDĐ
+chặn/rate-limit tạm thời khi nhiều leg matrix (scrape.yml) cùng lúc gõ vào. Test này trả lời dứt
+khoát: chạy TRÊN CHÍNH runner CI (qua workflow test-geoblock.yml) xem TGDĐ có chặn/timeout hay
+không, KHÔNG cần chờ cả lượt scrape.yml đầy đủ (30 leg, hàng giờ) mới biết.
 """
 from __future__ import annotations
 
@@ -22,6 +29,12 @@ TARGETS = {
         "url": "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=laptop+dell"
                "&sort=noi-bat&categories=may-tinh-xach-tay&page=1",
         "selector": ".cardInfo",
+    },
+    "tgdd": {
+        # URL + selector giống hệt discover_tgdd.py (CARD_SELECTOR = "li.item", giá trong ".price")
+        # — dùng category "camera" vì đó là nơi phát hiện lỗi thực tế trên CI.
+        "url": "https://www.thegioididong.com/camera-giam-sat",
+        "selector": "li.item .price",
     },
 }
 

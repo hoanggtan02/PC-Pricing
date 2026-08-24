@@ -33,10 +33,7 @@ import time
 
 from .db import get_client
 
-# Số lần thử RPC trước khi bỏ cuộc + CI đỏ. Xem ghi chú "RETRY" ở docstring đầu file.
 MAX_ATTEMPTS = 3
-# Backoff giữa các lần thử: 5s sau lần 1, 10s sau lần 2 (tăng dần — nhường thời gian cho sự cố
-# tạm thời tự phục hồi thay vì dồn dập thử lại ngay).
 BACKOFF_SECONDS_PER_ATTEMPT = 5
 
 
@@ -47,7 +44,6 @@ def main() -> int:
     last_err: Exception | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            # Hàm SQL refresh_latest_prices() tính lại + thay nội dung bảng (delete+insert nguyên tử).
             client.rpc("refresh_latest_prices").execute()
             last_err = None
             break
@@ -65,9 +61,8 @@ def main() -> int:
             f"hiển thị dữ liệu CŨ: {last_err}",
             file=sys.stderr,
         )
-        return 1  # CI đỏ để không âm thầm phục vụ dữ liệu cũ
+        return 1  
 
-    # Xác nhận độ tươi: refreshed_at của bảng cache so với scraped_at mới nhất của price_history.
     try:
         cache = client.table("latest_prices_cache").select("refreshed_at").limit(1).execute()
         ph = (client.table("price_history").select("scraped_at")
@@ -76,7 +71,6 @@ def main() -> int:
         scraped = ph.data[0]["scraped_at"] if ph.data else "?"
         print(f"OK. refreshed_at={refreshed}  |  latest scraped_at={scraped}")
     except Exception as e:
-        # Refresh đã chạy xong; đây chỉ là bước xác nhận, lỗi ở đây không nên làm CI đỏ.
         print(f"(refresh done; freshness check skipped: {e})")
 
     return 0
