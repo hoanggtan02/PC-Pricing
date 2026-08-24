@@ -37,6 +37,37 @@ PER_COMPETITOR_CONCURRENCY = {
 
 MIN_VALID_PRICE = 500
 
+# ── Phát hiện trang có khả năng bị CHẶN BOT (Cloudflare challenge/WAF) thay vì "đổi cấu trúc" ──
+# BUG THỰC TẾ (An Phát, phát hiện 2026-08): hàng loạt "Không tìm thấy giá trên trang" với html
+# CHỈ 0–6.5KB — quá nhỏ so với một trang sản phẩm THẬT (mọi trang trong hệ thống đều nặng
+# menu/tracker, xem ghi chú ở discover_anphat.py — "An Phát giữ các kết nối mạng luôn mở do
+# tracker"). Kích thước này khớp với một trang CHALLENGE/CHẶN BOT điển hình (Cloudflare "Just a
+# moment", trang lỗi rút gọn…) hơn là "trang sản phẩm đã đổi cấu trúc". Nếu cứ báo lỗi PARSE ngay
+# ở trường hợp này là bỏ lỡ cơ hội — nhiều khi chỉ cần CHỜ LÂU HƠN hoặc thử lại là qua được.
+#
+# MIN_HTML_LEN_SUSPECT_BLOCK là một ngưỡng heuristic (không tuyệt đối) — điều chỉnh nếu phát hiện
+# một site nào đó có trang sản phẩm THẬT nhỏ hơn mức này (hiếm, vì mọi trang trong hệ thống đều
+# nặng menu+tracker theo ghi chú của các discover_*.py).
+MIN_HTML_LEN_SUSPECT_BLOCK = 15000
+_BLOCK_PAGE_SIGNS = re.compile(
+    r"just a moment|attention required|access denied|are you a human|"
+    r"checking your browser|cloudflare|forbidden|một chút nữa|xin chờ|"
+    r"verify you are human|bot detected|too many requests|rate limit|"
+    r"request unsuccessful|incapsula",
+    re.IGNORECASE,
+)
+
+
+def _looks_blocked(html: str) -> bool:
+    """True nếu trang trông giống trang CHẶN BOT/chưa tải xong hơn là trang sản phẩm thật — xem
+    ghi chú ở MIN_HTML_LEN_SUSPECT_BLOCK. Dùng để quyết định có đáng thử lại với thời gian chờ dài
+    hơn trước khi báo lỗi PARSE hẳn hay không."""
+    if not html:
+        return True
+    if len(html) < MIN_HTML_LEN_SUSPECT_BLOCK:
+        return True
+    return bool(_BLOCK_PAGE_SIGNS.search(html[:8000]))
+
 
 def _concurrency_for(competitor: str | None) -> int:
     """Số worker song song cho lượt chạy này. Khi lượt chạy CHỈ lo MỘT competitor (job matrix
@@ -513,6 +544,30 @@ async def scrape_source(
             await page.wait_for_timeout(1500 if is_slow else 1200)
             price, availability_stock = await extract_price_generic(page, competitor)
 
+        # Chưa tìm được giá SAU mọi lần đọc lại -> kiểm tra xem có phải trang bị CHẶN BOT/chưa tải
+        # xong hay không (xem _looks_blocked ở đầu file — phát hiện từ vụ An Phát 2026-08: hàng
+        # loạt "Không tìm thấy giá" với html chỉ 0-6.5KB, quá nhỏ so với trang sản phẩm thật).
+        # Nếu đúng vậy, cho MỘT cơ hội cuối: điều hướng lại với wait_until="domcontentloaded"
+        # (chờ đầy đủ hơn "commit" — commit chỉ cần nhận header đầu tiên) + chờ thêm rồi đọc lại.
+        # RẺ hơn nhiều so với việc âm thầm mất hẳn sản phẩm đó mỗi lượt chạy chỉ vì gặp trang
+        # challenge/chưa kịp render.
+        if price is None:
+            try:
+                stale_html = await page.content()
+            except Exception:
+                stale_html = ""
+            if _looks_blocked(stale_html):
+                print(
+                    f"  🔁 {competitor} - {sku}: nghi trang bị chặn bot/chưa tải xong "
+                    f"(html={len(stale_html)} ký tự) — thử lại với chờ lâu hơn..."
+                )
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+                except Exception:
+                    pass  # timeout domcontentloaded vẫn có thể đã tải được phần lớn nội dung
+                await page.wait_for_timeout(3000)
+                price, availability_stock = await extract_price_generic(page, competitor)
+
         if price is not None:
             if 0 < price < MIN_VALID_PRICE:
                 print(
@@ -536,14 +591,19 @@ async def scrape_source(
                 html_len = len(await page.content())
             except Exception:
                 html_len = -1
+            # Gắn nhãn NGHI BOT-BLOCK khi html vẫn quá nhỏ SAU CẢ lần thử lại ở trên — giúp phân
+            # biệt "bị chặn/chưa tải xong dai dẳng" (đáng xem lại proxy/tần suất request) với
+            # "trang tải đủ nhưng đổi cấu trúc/selector" (đáng xem lại SELECTORS) khi đọc report.
+            suspect_block = html_len == -1 or html_len < MIN_HTML_LEN_SUSPECT_BLOCK
+            tag = "[NGHI BOT-BLOCK] " if suspect_block else ""
             print(
-                f"  ❌ {competitor} - {sku}: Không tìm thấy giá trên trang "
+                f"  ❌ {competitor} - {sku}: {tag}Không tìm thấy giá trên trang "
                 f"(html={html_len} ký tự) ({url})"
             )
             if failures is not None:
                 _record_failure(
                     failures, competitor, sku, url,
-                    f"Không tìm thấy giá trên trang (html={html_len} ký tự)",
+                    f"{tag}Không tìm thấy giá trên trang (html={html_len} ký tự)",
                 )
             return False
             

@@ -6,12 +6,18 @@ proxy bị lỗi kết nối (hết hạn/sập), tự đánh dấu "dead" trong
 tiếp còn sống — không cần sửa code scraper, không cần chờ người canh log rồi đổi tay.
 
 NGUỒN proxy, theo thứ tự ưu tiên (xem _load_proxies()):
-  1. TỰ ĐỘNG TẢI danh sách proxy VN MIỄN PHÍ từ ProxyScrape mỗi lần chạy (BẬT SẴN, không cần cấu
-     hình gì thêm) — xem DEFAULT_PROXYSCRAPE_URL. Tắt bằng PROXY_AUTO_FETCH=0; đổi nguồn bằng
-     PROXY_SCRAPE_URL. Vì đây là proxy IP trần miễn phí (không đảm bảo chất lượng, nhiều IP chết),
-     cơ chế rotate/mark_dead bên dưới sẽ tự loại các proxy chết trong lúc chạy, y hệt như với proxy
-     trả phí — không cần code riêng.
-  2. PROXY_SERVER đơn lẻ (tương thích ngược) — dự phòng khi tự tải lỗi/rỗng hoặc bị tắt.
+  1. TỰ ĐỘNG TẢI VÀ GỘP proxy VN MIỄN PHÍ từ HAI nguồn độc lập (BẬT SẴN, không cần cấu hình gì
+     thêm) — xem DEFAULT_PROXYSCRAPE_URL và DEFAULT_FINEPROXY_URL:
+       a. ProxyScrape — trả về TEXT THUẦN, mỗi dòng một "ip:port".
+       b. FineProxy VN — trả về JSON {"rows":[{"ip","port","protos":[...]},...]} (đã xác minh cấu
+          trúc thực tế 2026-08, xem _parse_fineproxy_response()).
+     Gộp (union, dedupe theo "ip:port") thay vì chỉ dùng MỘT nguồn: hai nguồn free-proxy độc lập
+     hiếm khi cùng chết cùng lúc, và bảng danh sách VN của mỗi nguồn khá nhỏ (FineProxy chỉ ~7-10
+     proxy VN tại một thời điểm) nên gộp lại vẫn còn rẻ để health-check. Tắt cả hai bằng
+     PROXY_AUTO_FETCH=0; tắt riêng FineProxy bằng PROXY_FINEPROXY_FETCH=0 (giữ ProxyScrape); đổi
+     nguồn qua PROXY_SCRAPE_URL / PROXY_FINEPROXY_URL.
+  2. PROXY_SERVER đơn lẻ (tương thích ngược) — dự phòng khi cả hai nguồn tự tải đều lỗi/rỗng hoặc
+     bị tắt.
 
   (Đã bỏ PROXY_LIST tĩnh — không dùng, luôn để trống trong thực tế. Nếu sau này cần dán tay một
   danh sách proxy trả phí, dùng lại _parse_proxy_list()/PROXY_SCRAPE_URL trỏ tới một endpoint tự
@@ -19,7 +25,7 @@ NGUỒN proxy, theo thứ tự ưu tiên (xem _load_proxies()):
 
 Vì get_pool() cache theo process (lru_cache), việc "tự động tải mỗi lần cào" tự nhiên xảy ra:
 mỗi lượt chạy scraper (mỗi job CI, mỗi lần chạy `python -m scraper...`) là MỘT process mới nên sẽ
-tự gọi lại ProxyScrape để lấy danh sách MỚI, không cần cache thủ công giữa các lượt chạy.
+tự gọi lại cả hai nguồn để lấy danh sách MỚI, không cần cache thủ công giữa các lượt chạy.
 
 Cách dùng:
     from .proxy_pool import get_pool
@@ -33,6 +39,7 @@ Cách dùng:
 from __future__ import annotations
 
 import functools
+import json
 import os
 import re
 import threading
@@ -175,12 +182,16 @@ DEFAULT_PROXYSCRAPE_URL = (
     "?request=display_proxies&proxy_format=ipport&format=text&country=vn"
 )
 
+# URL mặc định lấy danh sách proxy VN MIỄN PHÍ từ FineProxy — trả về JSON (KHÁC hẳn ProxyScrape,
+# xem _parse_fineproxy_response() để biết cấu trúc thực tế đã xác minh). Đổi nguồn qua
+# PROXY_FINEPROXY_URL; tắt riêng nguồn này (giữ ProxyScrape) qua PROXY_FINEPROXY_FETCH=0.
+DEFAULT_FINEPROXY_URL = "https://fineproxy.org/vi/wp-json/fineproxy/v1/free-proxies/vn"
+
 
 def _fetch_remote_proxy_list(url: str, timeout: float = 10.0) -> str:
-    """Tải danh sách proxy thô (text, mỗi dòng "ip:port") từ một API công khai (mặc định
-    ProxyScrape). KHÔNG raise khi lỗi (mạng chập chờn / API rate-limit / timeout) — trả về chuỗi
-    rỗng để _load_proxies() lặng lẽ rơi xuống PROXY_SERVER (nếu có cấu hình) thay vì làm sập cả
-    lượt chạy CI chỉ vì một API bên thứ ba tạm thời không phản hồi.
+    """Tải danh sách proxy thô (text) từ một API công khai. KHÔNG raise khi lỗi (mạng chập chờn /
+    API rate-limit / timeout) — trả về chuỗi rỗng để caller lặng lẽ rơi xuống nguồn khác thay vì
+    làm sập cả lượt chạy CI chỉ vì một API bên thứ ba tạm thời không phản hồi.
     """
     try:
         resp = httpx.get(url, timeout=timeout, follow_redirects=True)
@@ -189,6 +200,56 @@ def _fetch_remote_proxy_list(url: str, timeout: float = 10.0) -> str:
     except Exception as e:
         print(f"  ⚠️  Không tải được danh sách proxy tự động ({url}): {e}")
         return ""
+
+
+def _parse_fineproxy_response(raw: str) -> list[dict]:
+    """Parse phản hồi JSON của FineProxy free-proxy API. Cấu trúc thực tế đã xác minh (2026-08):
+
+        {"country":"VN","total":7,"generated_at":...,"count":7,"rows":[
+            {"ip":"14.161.10.46","port":80,"protos":["HTTP","SOCKS4","SOCKS5"],
+             "anon":"anon","city":"Ho Chi Minh City","isp":"...","latency":867,
+             "up":100,"speed":2076,"score":44,"last_checked":...},
+            ...
+        ]}
+
+    Chỉ lấy proxy có "HTTP" trong `protos` — code luôn chuẩn hoá scheme thành "http://"
+    (_normalize_server), nên một proxy CHỈ hỗ trợ SOCKS4/5 (không có "HTTP", ví dụ các proxy
+    "trans" cổng 1080 SOCKS4-only gặp trong mẫu thực tế) sẽ bị Playwright từ chối kết nối nếu vẫn
+    ép nó qua scheme http://. Sắp theo `score` GIẢM DẦN (nếu có) để proxy điểm cao hơn được
+    health-check trước — không bắt buộc đúng (health-check + rotate ở ProxyPool vẫn lo phần còn
+    lại), chỉ là một ưu tiên nhẹ, không ảnh hưởng tính đúng đắn nếu FineProxy đổi/bỏ field "score".
+
+    Không raise khi cấu trúc đổi/lỗi (JSON hỏng, thiếu "rows", v.v.) — trả về [] để _load_proxies()
+    lặng lẽ rơi xuống nguồn khác (ProxyScrape / PROXY_SERVER), giống hệt cách _fetch_remote_proxy_list
+    đã xử lý lỗi mạng.
+    """
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+
+    rows = data.get("rows") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return []
+
+    scored: list[tuple[float, dict]] = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        ip, port = r.get("ip"), r.get("port")
+        protos = r.get("protos") or []
+        if not ip or not port or "HTTP" not in protos:
+            continue
+        scored.append((r.get("score") or 0, {"server": _normalize_server(f"{ip}:{port}")}))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return [cfg for _, cfg in scored]
+
+
+def _fetch_fineproxy_proxies(url: str, timeout: float = 10.0) -> list[dict]:
+    """Tải + parse danh sách proxy VN từ FineProxy. Không raise — trả về [] khi lỗi (xem
+    _fetch_remote_proxy_list / _parse_fineproxy_response)."""
+    raw = _fetch_remote_proxy_list(url, timeout=timeout)
+    return _parse_fineproxy_response(raw) if raw else []
 
 
 def _truthy_env(name: str, default: str = "1") -> bool:
@@ -247,16 +308,41 @@ def _health_check_proxies(proxies: list[dict], timeout: float = 4.0, max_workers
 
 
 def _load_proxies() -> list[dict]:
-    """Xem thứ tự ưu tiên nguồn proxy ở docstring đầu file. Tóm tắt: tự động tải từ ProxyScrape
-    (bật sẵn) > PROXY_SERVER đơn lẻ (tương thích ngược, dự phòng)."""
+    """Xem thứ tự ưu tiên nguồn proxy ở docstring đầu file. Tóm tắt: GỘP tự động ProxyScrape +
+    FineProxy (bật sẵn) > PROXY_SERVER đơn lẻ (tương thích ngược, dự phòng)."""
     if _truthy_env("PROXY_AUTO_FETCH"):
-        url = os.environ.get("PROXY_SCRAPE_URL", "").strip() or DEFAULT_PROXYSCRAPE_URL
-        raw_auto = _fetch_remote_proxy_list(url)
-        proxies = _parse_proxy_list(raw_auto) if raw_auto else []
-        if proxies:
-            print(f"  ℹ️  Đã tải {len(proxies)} proxy (miễn phí, tự động) từ ProxyScrape.")
-            return _health_check_proxies(proxies)
-        print("  ⚠️  Danh sách proxy tự động rỗng/lỗi — thử PROXY_SERVER (nếu có cấu hình).")
+        merged: list[dict] = []
+        seen_servers: set[str] = set()
+
+        def _add_all(proxies: list[dict]) -> int:
+            added = 0
+            for p in proxies:
+                if p["server"] not in seen_servers:
+                    seen_servers.add(p["server"])
+                    merged.append(p)
+                    added += 1
+            return added
+
+        # Nguồn 1: ProxyScrape — text thuần "ip:port" mỗi dòng.
+        ps_url = os.environ.get("PROXY_SCRAPE_URL", "").strip() or DEFAULT_PROXYSCRAPE_URL
+        raw_ps = _fetch_remote_proxy_list(ps_url)
+        n_ps = _add_all(_parse_proxy_list(raw_ps) if raw_ps else [])
+        print(f"  ℹ️  ProxyScrape: {n_ps} proxy VN.")
+
+        # Nguồn 2: FineProxy VN — JSON {"rows":[{"ip","port","protos",...}]}, xem
+        # _parse_fineproxy_response(). GỘP THÊM (không thay thế) ProxyScrape — hai nguồn free-proxy
+        # độc lập ít khi cùng chết cùng lúc, mỗi proxy sống thêm là một cửa thoát nữa khi rotate.
+        # Tắt riêng bằng PROXY_FINEPROXY_FETCH=0 nếu nguồn này gây vấn đề mà không muốn tắt cả
+        # PROXY_AUTO_FETCH (mất luôn ProxyScrape).
+        if _truthy_env("PROXY_FINEPROXY_FETCH"):
+            fp_url = os.environ.get("PROXY_FINEPROXY_URL", "").strip() or DEFAULT_FINEPROXY_URL
+            n_fp = _add_all(_fetch_fineproxy_proxies(fp_url))
+            print(f"  ℹ️  FineProxy: {n_fp} proxy VN mới (không trùng ProxyScrape).")
+
+        if merged:
+            print(f"  ℹ️  Đã tải tổng {len(merged)} proxy (miễn phí, tự động, gộp 2 nguồn).")
+            return _health_check_proxies(merged)
+        print("  ⚠️  Danh sách proxy tự động rỗng/lỗi (cả 2 nguồn) — thử PROXY_SERVER (nếu có cấu hình).")
 
     # Tương thích ngược: PROXY_SERVER đơn lẻ -> danh sách 1 proxy.
     server = os.environ.get("PROXY_SERVER", "").strip()
