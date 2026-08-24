@@ -373,3 +373,29 @@ categories:
       tgdd:       "https://www.thegioididong.com/phan-mem"
       cellphones: "https://cellphones.com.vn/phu-kien/may-tinh-laptop/phan-mem.html"
       hacom:      "https://hacom.vn/phan-mem-ban-quyen"
+
+  # ── Camera an ninh (BRAND + model) ──
+  camera:
+    tier: A
+    search_term: "camera ip"
+    name_match: "camera|cam\\b"
+    # Loại phụ kiện camera: đầu ghi, ổ cứng NAS/camera, thiết bị kiểm tra, cáp, nguồn POE
+    name_exclude: "đầu ghi|dau ghi|nvr|dvr|ổ cứng|o cung|thiết bị kiểm tra|thiet bi kiem tra|poe|cáp|cap |nguồn|nguon|bracket|giá treo|gia treo|vỏ|vo camera|túi|tui"
+    tnc: "https://www.tnc.com.vn/camera.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/camera-giam-sat"
+      tgdd:    "https://www.thegioididong.com/camera-giam-sat"
+      fptshop: "https://fptshop.com.vn/tim-kiem?s=camera&categories=camera&page={page}"
+
+  # ── Thiết bị âm thanh: tai nghe, loa, micro (BRAND + model) ──
+  audio:
+    tier: A
+    search_term: "tai nghe loa"
+    name_match: "tai nghe|tainghe|headphone|headset|earphone|\\bloa\\b|speaker|micro\\b|microphone"
+    # Loại phụ kiện âm thanh: cáp audio, đầu chuyển, giá đỡ, bao đựng, amp/DAC riêng biệt
+    name_exclude: "cáp|cap audio|cáp chia|cap chia|đầu chuyển|dau chuyen|giá đỡ|gia do|bao đựng|bao dung|đệm|dem tai|đệm mút|foam|amp\\b|\\bdac\\b|soundcard|sound card"
+    tnc: "https://www.tnc.com.vn/thiet-bi-am-thanh.html?p={page}"
+    paths:
+      phongvu: "https://phongvu.vn/c/tai-nghe"
+      tgdd:    "https://www.thegioididong.com/tai-nghe-nhung"
+      fptshop: "https://fptshop.com.vn/tai-nghe"

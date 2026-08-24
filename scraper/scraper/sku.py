@@ -1345,6 +1345,9 @@ _CATEGORY_SKU = {
     "wlan_controller": network_sku,
     # phần mềm bản quyền — không có mã part, khoá theo tên + số thiết bị + thời hạn
     "software": software_sku,
+    # camera an ninh và thiết bị âm thanh — "BRAND MODEL" giống thiết bị mạng
+    "camera": network_sku,
+    "audio": network_sku,
 }
 
 
