@@ -68,6 +68,7 @@ jobs:
           - { id: phongvu,     competitor: "Phong Vũ" }
           - { id: fptshop,     competitor: "FPT Shop" }
           - { id: tgdd,        competitor: "Thế Giới Di Động" }
+          - { id: tinhocngoisao, competitor: "Tin Học Ngôi Sao" }
     defaults:
       run:
         working-directory: scraper
@@ -164,7 +165,7 @@ jobs:
 
           TOTAL=$(wc -l < "$ALL" | tr -d ' ')
 
-          echo "::group::❌ Tổng hợp link cào lỗi (toàn bộ 9 cửa hàng)"
+          echo "::group::❌ Tổng hợp link cào lỗi (toàn bộ 10 cửa hàng)"
           echo "Tổng số link lỗi: $TOTAL"
           if [ "$TOTAL" -gt 0 ]; then
             echo ""

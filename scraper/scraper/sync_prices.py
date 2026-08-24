@@ -69,7 +69,8 @@ SELECTORS = {
     "Hà Nội Computer": [".dpro-p-price", ".price-current", ".product-price"],
     "Memoryzone": [".product-price", ".price-current"],
     "FPT Shop": [".b1-semibold", ".fpt-price", ".price-current"],
-    "Thế Giới Di Động": [".box-price-present", ".price-current"]
+    "Thế Giới Di Động": [".box-price-present", ".price-current"],
+    "Tin Học Ngôi Sao": [".pdPrice span", ".pdPrice", "[itemprop='price']"]
 }
 
 _AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued"}
@@ -450,18 +451,6 @@ async def scrape_source(
         is_slow = competitor in SLOW_COMPETITORS
         await _wait_price_rendered(page, competitor, timeout=20000 if is_slow else 10000)
         
-        # Kiểm tra nếu TNC (Thành Nhân) ngừng kinh doanh sản phẩm
-        if competitor == "Thành Nhân":
-            body_text = await page.locator("body").inner_text()
-            if re.search(r"ngừng\s+kinh\s+doanh|ngưng\s+kinh\s+doanh|ngung\s+kinh\s+doanh", body_text, re.IGNORECASE):
-                print(f"  [DISCONTINUED] Thành Nhân - {sku}: ngừng kinh doanh, tắt toàn bộ sources của SKU này")
-                if not dry_run:
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, deactivate_all_sources, client, sku)
-                if failures is not None:
-                    _record_failure(failures, competitor, sku, url, "TNC ngừng kinh doanh sản phẩm này")
-                return False
-
         title = await page.title()
         # Kiểm tra thêm thẻ h1 vì nhiều site (Hacom, CellphoneS...) ghi rõ
         # "(Tray)", "(Chính hãng không vỏ hộp)"... trong h1 nhưng KHÔNG đưa
@@ -473,6 +462,39 @@ async def scrape_source(
                 h1_text = (await h1_el.inner_text(timeout=2000)).strip()
         except Exception:
             pass
+
+        # Kiểm tra ngừng kinh doanh sản phẩm (đối thủ hoặc TNC)
+        body_text = ""
+        try:
+            body_text = await page.locator("body").inner_text()
+        except Exception:
+            pass
+
+        discontinued_pattern = r"\b(?:ngừng|ngưng|ngung)\s+kinh\s+doanh\b"
+        is_discontinued = (
+            re.search(discontinued_pattern, title, re.IGNORECASE) is not None or
+            re.search(discontinued_pattern, h1_text, re.IGNORECASE) is not None or
+            re.search(discontinued_pattern, body_text, re.IGNORECASE) is not None
+        )
+
+        if is_discontinued:
+            if competitor == "Thành Nhân":
+                print(f"  [DISCONTINUED] Thành Nhân - {sku}: ngừng kinh doanh, tắt toàn bộ sources của SKU này")
+                if not dry_run:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, deactivate_all_sources, client, sku)
+                if failures is not None:
+                    _record_failure(failures, competitor, sku, url, "TNC ngừng kinh doanh sản phẩm này")
+                return False
+            else:
+                print(f"  [DISCONTINUED] {competitor} - {sku}: đối thủ ngừng kinh doanh, tự động tắt source link này")
+                if not dry_run:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, deactivate_source, client, sku, competitor)
+                    # Ghi nhận giá = 0, in_stock = False vào DB
+                    await loop.run_in_executor(None, insert_price, client, sku, competitor, 0, False, False)
+                return True
+
         is_used = is_old_listing_name(title) or is_old_listing_name(h1_text)
         if is_used:
             detected_in = "title" if is_old_listing_name(title) else "h1"
@@ -571,6 +593,41 @@ async def scrape_source(
                             retry_h1 = (await retry_h1_el.inner_text(timeout=2000)).strip()
                     except Exception:
                         pass
+
+                    # Kiểm tra ngừng kinh doanh ở phần retry
+                    retry_body = ""
+                    try:
+                        retry_body = await retry_pg.locator("body").inner_text()
+                    except Exception:
+                        pass
+
+                    is_discontinued_retry = (
+                        re.search(discontinued_pattern, retry_title, re.IGNORECASE) is not None or
+                        re.search(discontinued_pattern, retry_h1, re.IGNORECASE) is not None or
+                        re.search(discontinued_pattern, retry_body, re.IGNORECASE) is not None
+                    )
+
+                    if is_discontinued_retry:
+                        if competitor == "Thành Nhân":
+                            print(f"  [DISCONTINUED] Thành Nhân - {sku}: ngừng kinh doanh, tắt toàn bộ sources của SKU này (retry)")
+                            if not dry_run:
+                                loop = asyncio.get_event_loop()
+                                await loop.run_in_executor(None, deactivate_all_sources, client, sku)
+                            if failures is not None:
+                                _record_failure(failures, competitor, sku, url, "TNC ngừng kinh doanh sản phẩm này (retry)")
+                            await retry_pg.close()
+                            await retry_page.close()
+                            return False
+                        else:
+                            print(f"  [DISCONTINUED] {competitor} - {sku}: đối thủ ngừng kinh doanh, tự động tắt source link này (retry)")
+                            if not dry_run:
+                                loop = asyncio.get_event_loop()
+                                await loop.run_in_executor(None, deactivate_source, client, sku, competitor)
+                                await loop.run_in_executor(None, insert_price, client, sku, competitor, 0, False, False)
+                            await retry_pg.close()
+                            await retry_page.close()
+                            return True
+
                     await retry_pg.close()
                     await retry_page.close()
                     if retry_price is not None:

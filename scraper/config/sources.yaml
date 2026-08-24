@@ -21,6 +21,7 @@ competitors:
   # kiện trả về laptop/điện thoại). Chi tiết + số liệu: docs/competitor-category-navigation.md, docs/proxy.md.
   fptshop:    { search_url: "https://fptshop.com.vn/tim-kiem?s={query}" }
   phongvu:    { search_url: "https://phongvu.vn/search?router=productListing&query={query}" }
+  tinhocngoisao: { search_url: "https://tinhocngoisao.com/search?q={query}" }
 
 # ── categories ─────────────────────────────────────────────────────────────────────────────────
 categories:
