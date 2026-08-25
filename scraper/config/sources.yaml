@@ -22,6 +22,7 @@ competitors:
   fptshop:    { search_url: "https://fptshop.com.vn/tim-kiem?s={query}" }
   phongvu:    { search_url: "https://phongvu.vn/search?router=productListing&query={query}" }
   tinhocngoisao: { search_url: "https://tinhocngoisao.com/search?q={query}" }
+  phucanh:    { search_url: "https://www.phucanh.vn/tim?q={query}" }
 
 # ── categories ─────────────────────────────────────────────────────────────────────────────────
 categories:
@@ -36,6 +37,7 @@ categories:
       phongvu: "https://phongvu.vn/c/man-hinh-may-tinh"
       tgdd:    "https://www.thegioididong.com/man-hinh-may-tinh"
       fptshop: "https://fptshop.com.vn/man-hinh"
+      phucanh: "https://www.phucanh.vn/man-hinh-may-tinh.html"
 
   cpu:
     tier: A
@@ -51,6 +53,7 @@ categories:
       phongvu: "https://phongvu.vn/c/cpu"
       fptshop: "https://fptshop.com.vn/linh-kien/cpu"
       gearvn:  "https://gearvn.com/collections/cpu-bo-vi-xu-ly"
+      phucanh: "https://www.phucanh.vn/bo-vi-xu-ly.html"
 
   # ── VGA / Card màn hình (BRAND-GPU-DÒNG-MEM; dùng vga_sku) ──
   vga:
@@ -69,6 +72,7 @@ categories:
       phongvu: "https://phongvu.vn/c/card-man-hinh-vga"
       fptshop: "https://fptshop.com.vn/linh-kien/card-man-hinh"
       gearvn:  "https://gearvn.com/collections/vga-card-man-hinh"
+      phucanh: "https://www.phucanh.vn/card-man-hinh.html"
 
   # ── Mainboard / Bo mạch chủ (BRAND-CHIPSET-MODEL-MEMGEN; dùng mainboard_sku) ──
   mainboard:
@@ -82,6 +86,7 @@ categories:
       phongvu: "https://phongvu.vn/c/bo-mach-chu-mainboard"
       fptshop: "https://fptshop.com.vn/linh-kien/mainboard"
       gearvn:  "https://gearvn.com/collections/mainboard-bo-mach-chu"
+      phucanh: "https://www.phucanh.vn/bo-mach-chu-mainboard.html"
 
   # ── Thiết bị văn phòng / gia dụng (BRAND + mã model; dùng chung av_sku) ──
   printer:
@@ -93,6 +98,7 @@ categories:
     paths:
       tgdd: "https://www.thegioididong.com/may-in"
       phongvu: "https://phongvu.vn/c/may-in"
+      phucanh: "https://www.phucanh.vn/may-in.html"
   scanner:
     tier: A
     search_term: "máy scan"
@@ -101,6 +107,7 @@ categories:
     tnc: "https://www.tnc.com.vn/may-scan.html?p={page}"
     paths:
       phongvu: "https://phongvu.vn/c/may-scan"
+      phucanh: "https://www.phucanh.vn/may-quet-may-scan.html"
   ups:
     tier: A
     search_term: "bộ lưu điện ups"
@@ -109,6 +116,7 @@ categories:
     tnc: "https://www.tnc.com.vn/ups.html?p={page}"
     paths:
       tgdd: "https://www.thegioididong.com/bo-luu-dien"
+      phucanh: "https://www.phucanh.vn/bo-luu-dien.html"
 
   projector:
     tier: A
@@ -118,6 +126,7 @@ categories:
     tnc: "https://www.tnc.com.vn/may-chieu.html?p={page}"
     paths:
       phongvu: "https://phongvu.vn/c/thiet-bi-trinh-chieu"
+      phucanh: "https://www.phucanh.vn/may-chieu.html"
   tv:
     tier: A
     search_term: "tivi"
@@ -139,6 +148,7 @@ categories:
       phongvu: "https://phongvu.vn/c/may-tinh-bang"
       fptshop: "https://fptshop.com.vn/may-tinh-bang"
       tgdd: "https://www.thegioididong.com/may-tinh-bang"
+      phucanh: "https://www.phucanh.vn/may-tinh-bang.html"
   ram:
     tier: A
     # A/B đo trên 5 site search-box (2026-07-23): "ram" THẮNG "ram pc" rõ rệt, 49 → 76 khớp (+55%).
@@ -157,6 +167,7 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/c/ram"
       fptshop: "https://fptshop.com.vn/linh-kien/ram"
+      phucanh: "https://www.phucanh.vn/bo-nho-trong-linh-kien-pc.html"
 
   ssd:
     tier: A
@@ -167,6 +178,7 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/c/o-cung-ssd"
       fptshop: "https://fptshop.com.vn/linh-kien/o-cung"
+      phucanh: "https://www.phucanh.vn/o-cung-the-ran-ssd.html"
 
   hdd:
     tier: A
@@ -177,6 +189,7 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/c/o-cung-hdd"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=hdd&categories=o-cung-hdd&page={page}"
+      phucanh: "https://www.phucanh.vn/o-cung-hdd.html"
 
   # ── Phụ kiện linh-phu-kien (Tier A: bàn phím/chuột/webcam/USB/box đều có mã model in giống nhau) ──
   keyboard:
@@ -190,6 +203,7 @@ categories:
       phongvu: "https://phongvu.vn/search?router=productListing&query=ban-phim"
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=ban+phim"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=ban+phim&categories=ban-phim&page={page}"
+      phucanh: "https://www.phucanh.vn/gaming-keyboard.html"
 
   mouse:
     # enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -202,6 +216,7 @@ categories:
       phongvu: "https://phongvu.vn/search?router=productListing&query=chuot-may-tinh"
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=chuot+may+tinh"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=chuot&categories=chuot&page={page}"
+      phucanh: "https://www.phucanh.vn/chuot-gaming.html"
 
   combo:
     enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -274,6 +289,7 @@ categories:
       phongvu: "https://phongvu.vn/c/thiet-bi-mang-an-ninh"
       tgdd:    "https://www.thegioididong.com/thiet-bi-mang"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=router&page={page}"
+      phucanh: "https://www.phucanh.vn/thiet-bi-mang.html"
 
   switch:
     tier: A
@@ -285,6 +301,7 @@ categories:
       phongvu: "https://phongvu.vn/search?router=productListing&query=switch-mang"
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=switch+mang"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=switch&page={page}"
+      phucanh: "https://www.phucanh.vn/switch-mang.html"
 
   accesspoint:
     enabled: false   # tắt: gear doanh nghiệp, đối thủ ít bán → ít match
@@ -332,6 +349,7 @@ categories:
       # danh mục CÓ product cards mà parser (li.item) đọc được.
       fptshop: "https://fptshop.com.vn/tim-kiem?s=may+tinh+de+ban&sort=noi-bat&categories=may-tinh-de-ban&page={page}"
       tgdd: "https://www.thegioididong.com/may-tinh-de-ban"
+      phucanh: "https://www.phucanh.vn/may-tinh-de-ban.html"
   # ── Máy trạm (Workstation) — branded (Dell Precision, HP Z, Lenovo ThinkStation) có mã model ──
   workstation:
     tier: A
@@ -342,6 +360,7 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/search?router=productListing&query=workstation"
       fptshop: "https://fptshop.com.vn/tim-kiem?s=workstation&page={page}"
+      phucanh: "https://www.phucanh.vn/may-tram-workstation.html"
 
   # ── Máy chủ (Server) — branded (Dell PowerEdge, HPE ProLiant, Lenovo ThinkSystem) có mã model ──
   server:
@@ -386,6 +405,7 @@ categories:
       phongvu: "https://phongvu.vn/c/camera-giam-sat"
       tgdd:    "https://www.thegioididong.com/camera-giam-sat"
       fptshop: "https://fptshop.com.vn/tim-kiem?s=camera&categories=camera&page={page}"
+      phucanh: "https://www.phucanh.vn/camera-giam-sat.html"
 
   # ── Thiết bị âm thanh: tai nghe, loa, micro (BRAND + model) ──
   audio:
@@ -398,4 +418,5 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/c/tai-nghe"
       tgdd:    "https://www.thegioididong.com/tai-nghe-nhung"
+      phucanh: "https://www.phucanh.vn/tainghe.html"
       fptshop: "https://fptshop.com.vn/tai-nghe"

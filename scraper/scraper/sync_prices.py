@@ -33,6 +33,7 @@ PER_COMPETITOR_CONCURRENCY = {
     "CellphoneS": 4,
     "Thành Nhân": 8,    
     "An Phát PC": 4,
+    "Phúc Anh": 3,
 }
 
 MIN_VALID_PRICE = 500
@@ -101,7 +102,8 @@ SELECTORS = {
     "Memoryzone": [".product-price", ".price-current"],
     "FPT Shop": [".b1-semibold", ".fpt-price", ".price-current"],
     "Thế Giới Di Động": [".box-price-present", ".price-current"],
-    "Tin Học Ngôi Sao": [".pdPrice span", ".pdPrice", "[itemprop='price']"]
+    "Tin Học Ngôi Sao": [".pdPrice span", ".pdPrice", "[itemprop='price']"],
+    "Phúc Anh": [".p-price2", ".price-current", ".p-price"]
 }
 
 _AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued"}

@@ -69,6 +69,7 @@ jobs:
           - { id: fptshop,     competitor: "FPT Shop" }
           - { id: tgdd,        competitor: "Thế Giới Di Động" }
           - { id: tinhocngoisao, competitor: "Tin Học Ngôi Sao" }
+          - { id: phucanh,     competitor: "Phúc Anh" }
     defaults:
       run:
         working-directory: scraper

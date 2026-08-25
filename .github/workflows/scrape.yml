@@ -169,7 +169,7 @@ jobs:
 
           # TNC LUÔN chạy trước trong danh sách này — bắt buộc, vì TNC là nguồn định nghĩa
           # catalog (products); các shop sau khớp giá dựa trên SKU mà TNC vừa ghi.
-          for shop in tnc anphat cellphones hacom phongvu fptshop tgdd gearvn memoryzone tinhocngoisao; do
+          for shop in tnc anphat cellphones hacom phongvu fptshop tgdd gearvn memoryzone tinhocngoisao phucanh; do
             if [ "${{ matrix.kind }}" = "laptop" ]; then
               cmd=(python -m "scraper.discover_$shop" --brand "${{ matrix.brand }}")
             else
