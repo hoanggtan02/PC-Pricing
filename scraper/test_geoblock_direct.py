@@ -31,8 +31,6 @@ TARGETS = {
         "selector": ".cardInfo",
     },
     "tgdd": {
-        # URL + selector giống hệt discover_tgdd.py (CARD_SELECTOR = "li.item", giá trong ".price")
-        # — dùng category "camera" vì đó là nơi phát hiện lỗi thực tế trên CI.
         "url": "https://www.thegioididong.com/camera-giam-sat",
         "selector": "li.item .price",
     },

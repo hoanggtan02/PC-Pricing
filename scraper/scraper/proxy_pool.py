@@ -6,17 +6,21 @@ proxy bị lỗi kết nối (hết hạn/sập), tự đánh dấu "dead" trong
 tiếp còn sống — không cần sửa code scraper, không cần chờ người canh log rồi đổi tay.
 
 NGUỒN proxy, theo thứ tự ưu tiên (xem _load_proxies()):
-  1. TỰ ĐỘNG TẢI VÀ GỘP proxy VN MIỄN PHÍ từ HAI nguồn độc lập (BẬT SẴN, không cần cấu hình gì
-     thêm) — xem DEFAULT_PROXYSCRAPE_URL và DEFAULT_FINEPROXY_URL:
+  1. TỰ ĐỘNG TẢI VÀ GỘP proxy VN MIỄN PHÍ từ BA nguồn độc lập (BẬT SẴN, không cần cấu hình gì
+     thêm) — xem DEFAULT_PROXYSCRAPE_URL, DEFAULT_FINEPROXY_URL, DEFAULT_DATABAY_URL:
        a. ProxyScrape — trả về TEXT THUẦN, mỗi dòng một "ip:port".
        b. FineProxy VN — trả về JSON {"rows":[{"ip","port","protos":[...]},...]} (đã xác minh cấu
           trúc thực tế 2026-08, xem _parse_fineproxy_response()).
-     Gộp (union, dedupe theo "ip:port") thay vì chỉ dùng MỘT nguồn: hai nguồn free-proxy độc lập
+       c. Databay VN — trả về JSON {"data":[{"ip","port","protocol","ssl","iso",...}]} (đã xác
+          minh cấu trúc thực tế 2026-08, xem _parse_databay_response()). "protocol" (Http/Socks5)
+          quyết định scheme của proxy.server; với protocol Http, "ssl" quyết định dùng http://
+          hay https:// — xem _databay_server().
+     Gộp (union, dedupe theo "ip:port") thay vì chỉ dùng MỘT nguồn: các nguồn free-proxy độc lập
      hiếm khi cùng chết cùng lúc, và bảng danh sách VN của mỗi nguồn khá nhỏ (FineProxy chỉ ~7-10
-     proxy VN tại một thời điểm) nên gộp lại vẫn còn rẻ để health-check. Tắt cả hai bằng
-     PROXY_AUTO_FETCH=0; tắt riêng FineProxy bằng PROXY_FINEPROXY_FETCH=0 (giữ ProxyScrape); đổi
-     nguồn qua PROXY_SCRAPE_URL / PROXY_FINEPROXY_URL.
-  2. PROXY_SERVER đơn lẻ (tương thích ngược) — dự phòng khi cả hai nguồn tự tải đều lỗi/rỗng hoặc
+     proxy VN tại một thời điểm) nên gộp lại vẫn còn rẻ để health-check. Tắt cả ba bằng
+     PROXY_AUTO_FETCH=0; tắt riêng từng nguồn bằng PROXY_FINEPROXY_FETCH=0 / PROXY_DATABAY_FETCH=0
+     (giữ ProxyScrape); đổi URL nguồn qua PROXY_SCRAPE_URL / PROXY_FINEPROXY_URL / PROXY_DATABAY_URL.
+  2. PROXY_SERVER đơn lẻ (tương thích ngược) — dự phòng khi cả ba nguồn tự tải đều lỗi/rỗng hoặc
      bị tắt.
 
   (Đã bỏ PROXY_LIST tĩnh — không dùng, luôn để trống trong thực tế. Nếu sau này cần dán tay một
@@ -25,7 +29,7 @@ NGUỒN proxy, theo thứ tự ưu tiên (xem _load_proxies()):
 
 Vì get_pool() cache theo process (lru_cache), việc "tự động tải mỗi lần cào" tự nhiên xảy ra:
 mỗi lượt chạy scraper (mỗi job CI, mỗi lần chạy `python -m scraper...`) là MỘT process mới nên sẽ
-tự gọi lại cả hai nguồn để lấy danh sách MỚI, không cần cache thủ công giữa các lượt chạy.
+tự gọi lại cả ba nguồn để lấy danh sách MỚI, không cần cache thủ công giữa các lượt chạy.
 
 Cách dùng:
     from .proxy_pool import get_pool
@@ -182,6 +186,8 @@ DEFAULT_PROXYSCRAPE_URL = (
 
 DEFAULT_FINEPROXY_URL = "https://fineproxy.org/vi/wp-json/fineproxy/v1/free-proxies/vn"
 
+DEFAULT_DATABAY_URL = "https://databay.com/api/v1/proxy-list?country=VN"
+
 
 def _fetch_remote_proxy_list(url: str, timeout: float = 10.0) -> str:
     """Tải danh sách proxy thô (text) từ một API công khai. KHÔNG raise khi lỗi (mạng chập chờn /
@@ -225,6 +231,62 @@ def _fetch_fineproxy_proxies(url: str, timeout: float = 10.0) -> list[dict]:
     _fetch_remote_proxy_list / _parse_fineproxy_response)."""
     raw = _fetch_remote_proxy_list(url, timeout=timeout)
     return _parse_fineproxy_response(raw) if raw else []
+
+
+def _databay_server(entry: dict) -> str | None:
+    """Ghép server URI đúng scheme cho một proxy Databay. Playwright chỉ chấp nhận scheme
+    http/https/socks5 cho proxy.server, và Databay không trả sẵn scheme — chỉ "protocol"
+    ("Http"/"Socks5") + "ssl" (bool, chỉ áp dụng khi protocol là Http):
+      - protocol "Socks5"                -> "socks5://ip:port"
+      - protocol "Http" với ssl=true     -> "https://ip:port"  (proxy front-end có TLS)
+      - protocol "Http" với ssl=false    -> "http://ip:port"
+    Trả None nếu thiếu ip/port hoặc protocol lạ (không đoán bừa scheme — một scheme sai khiến
+    Playwright launch lỗi ngay, hoặc tệ hơn là kết nối "thành công" qua sai giao thức)."""
+    ip, port = entry.get("ip"), entry.get("port")
+    if not ip or not port:
+        return None
+    protocol = str(entry.get("protocol") or "").strip().lower()
+    if protocol == "socks5":
+        scheme = "socks5"
+    elif protocol == "http":
+        scheme = "https" if entry.get("ssl") else "http"
+    else:
+        return None  # protocol chưa biết (vd "Socks4") — bỏ qua thay vì đoán
+    return f"{scheme}://{ip}:{port}"
+
+
+def _parse_databay_response(raw: str) -> list[dict]:
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+
+    rows = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return []
+
+    scored: list[tuple[float, dict]] = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        # Phòng hờ dù URL đã lọc country=VN — không tin tưởng mù quáng field lọc phía server.
+        if str(r.get("iso") or "").upper() != "VN":
+            continue
+        server = _databay_server(r)
+        if not server:
+            continue
+        # uptime (%) làm điểm xếp hạng, giống "score" của FineProxy — uptime cao hơn có xu hướng
+        # sống lâu hơn trong một lượt chạy, nên ưu tiên đứng trước trong danh sách đã gộp.
+        scored.append((r.get("uptime") or 0, {"server": server}))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return [cfg for _, cfg in scored]
+
+
+def _fetch_databay_proxies(url: str, timeout: float = 10.0) -> list[dict]:
+    """Tải + parse danh sách proxy VN từ Databay. Không raise — trả về [] khi lỗi (xem
+    _fetch_remote_proxy_list / _parse_databay_response)."""
+    raw = _fetch_remote_proxy_list(url, timeout=timeout)
+    return _parse_databay_response(raw) if raw else []
 
 
 def _truthy_env(name: str, default: str = "1") -> bool:
@@ -284,7 +346,7 @@ def _health_check_proxies(proxies: list[dict], timeout: float = 4.0, max_workers
 
 def _load_proxies() -> list[dict]:
     """Xem thứ tự ưu tiên nguồn proxy ở docstring đầu file. Tóm tắt: GỘP tự động ProxyScrape +
-    FineProxy (bật sẵn) > PROXY_SERVER đơn lẻ (tương thích ngược, dự phòng)."""
+    FineProxy + Databay (bật sẵn) > PROXY_SERVER đơn lẻ (tương thích ngược, dự phòng)."""
     if _truthy_env("PROXY_AUTO_FETCH"):
         merged: list[dict] = []
         seen_servers: set[str] = set()
@@ -305,7 +367,7 @@ def _load_proxies() -> list[dict]:
         print(f"  ℹ️  ProxyScrape: {n_ps} proxy VN.")
 
         # Nguồn 2: FineProxy VN — JSON {"rows":[{"ip","port","protos",...}]}, xem
-        # _parse_fineproxy_response(). GỘP THÊM (không thay thế) ProxyScrape — hai nguồn free-proxy
+        # _parse_fineproxy_response(). GỘP THÊM (không thay thế) ProxyScrape — các nguồn free-proxy
         # độc lập ít khi cùng chết cùng lúc, mỗi proxy sống thêm là một cửa thoát nữa khi rotate.
         # Tắt riêng bằng PROXY_FINEPROXY_FETCH=0 nếu nguồn này gây vấn đề mà không muốn tắt cả
         # PROXY_AUTO_FETCH (mất luôn ProxyScrape).
@@ -314,10 +376,18 @@ def _load_proxies() -> list[dict]:
             n_fp = _add_all(_fetch_fineproxy_proxies(fp_url))
             print(f"  ℹ️  FineProxy: {n_fp} proxy VN mới (không trùng ProxyScrape).")
 
+        # Nguồn 3: Databay VN — JSON {"data":[{"ip","port","protocol","ssl","iso",...}]}, xem
+        # _parse_databay_response(). GỘP THÊM (không thay thế) hai nguồn trên. Tắt riêng bằng
+        # PROXY_DATABAY_FETCH=0 nếu nguồn này gây vấn đề mà không muốn tắt cả PROXY_AUTO_FETCH.
+        if _truthy_env("PROXY_DATABAY_FETCH"):
+            db_url = os.environ.get("PROXY_DATABAY_URL", "").strip() or DEFAULT_DATABAY_URL
+            n_db = _add_all(_fetch_databay_proxies(db_url))
+            print(f"  ℹ️  Databay: {n_db} proxy VN mới (không trùng ProxyScrape/FineProxy).")
+
         if merged:
-            print(f"  ℹ️  Đã tải tổng {len(merged)} proxy (miễn phí, tự động, gộp 2 nguồn).")
+            print(f"  ℹ️  Đã tải tổng {len(merged)} proxy (miễn phí, tự động, gộp 3 nguồn).")
             return _health_check_proxies(merged)
-        print("  ⚠️  Danh sách proxy tự động rỗng/lỗi (cả 2 nguồn) — thử PROXY_SERVER (nếu có cấu hình).")
+        print("  ⚠️  Danh sách proxy tự động rỗng/lỗi (cả 3 nguồn) — thử PROXY_SERVER (nếu có cấu hình).")
 
     # Tương thích ngược: PROXY_SERVER đơn lẻ -> danh sách 1 proxy.
     server = os.environ.get("PROXY_SERVER", "").strip()
