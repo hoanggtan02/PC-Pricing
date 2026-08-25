@@ -84,7 +84,7 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop"}
+PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop", "Thế Giới Di Động"}
 
 GOTO_TIMEOUT_MS = {
     "default": 30000,

@@ -1,11 +1,9 @@
-"""Scraper khám phá giá Thế Giới Di Động (thegioididong.com) (Playwright, không cần proxy).
+"""Scraper khám phá giá Thế Giới Di Động (thegioididong.com) (Playwright + proxy Việt Nam).
 
-TGDĐ TỪNG chặn theo vùng địa lý các IP ngoài Việt Nam ở tầng TLS (reset kết nối) — trước đây
-module này định tuyến qua proxy VN (use_proxy=True). Xác nhận lại (2026-08): TGDĐ không còn chặn
-IP ngoài VN, truy cập trực tiếp hoạt động bình thường — khớp với sync_prices.py (Mode B), vốn đã
-KHÔNG đưa "Thế Giới Di Động" vào PROXY_COMPETITORS từ trước. Bỏ proxy ở đây (use_proxy=False) để
-hai chế độ nhất quán, và bớt phụ thuộc vào proxy pool (vốn kém ổn định — xem proxy_pool.py) cho
-một site không còn cần nó. Trang danh sách được render phía server, nên các selector ổn định và sạch.
+CẬP NHẬT (2026-08): TGDĐ lại chặn theo vùng địa lý các IP ngoài Việt Nam — quay lại định tuyến
+qua proxy VN (use_proxy=True; xem browser.py / .env), giống Phong Vũ / FPT Shop. (Trước đó có một
+giai đoạn ngắn xác nhận TGDĐ không chặn nữa nên đã bỏ proxy — nay bật lại.) Trang danh sách vẫn
+render phía server nên các selector không đổi.
 
 Selector đã xác minh (DOM đã render):
     card  : li.item   (chứa một liên kết sản phẩm laptop)
@@ -20,6 +18,11 @@ phẩm MỚI, không phải để cào lại giá của mọi sản phẩm đã 
 hàng ngày) đã cào đều đặn rồi. Vì vậy SKU nào ĐÃ có source ở competitor này (fetch_existing_source_skus)
 thì chỉ được refresh URL (upsert_sources), KHÔNG ghi thêm dòng price_history trùng lặp.
 
+DÙNG browser_session (KHÔNG dùng browser_page): trang này cần proxy VN, và một lượt khám phá có
+thể tốn nhiều phút (bấm "Xem thêm" nhiều lần để tải hết laptop). Nếu proxy hết hạn GIỮA lượt
+chạy, goto_with_retry() cần relaunch được browser với proxy khác NGAY — xem ghi chú "BUG ĐÃ SỬA"
+ở đầu browser.py.
+
 Cách dùng:
     python -m scraper.discover_tgdd --dry
     python -m scraper.discover_tgdd
@@ -32,7 +35,7 @@ import re
 import sys
 
 from .brand import name_match_term
-from .browser import browser_page, goto_with_retry
+from .browser import browser_session, goto_with_retry
 from .config import categories, is_old_listing_name, name_exclude_re, name_match_re, resolve_url
 from .db import (
     ensure_competitor,
@@ -81,9 +84,14 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     if not list_url:
         return []
     results: list[dict] = []
-    with browser_page(use_proxy=False) as page:
-        if not goto_with_retry(page, list_url, f"{CARD_SELECTOR} .price", label=COMPETITOR):
+    with browser_session(use_proxy=True) as session:
+        if not goto_with_retry(session, list_url, f"{CARD_SELECTOR} .price", label=COMPETITOR):
             return results
+
+        # session.page có thể đã đổi (rebuild giữa chừng nếu proxy chết) — đọc LẠI sau
+        # goto_with_retry, rồi dùng biến `page` cục bộ cho phần còn lại (không có thêm điều hướng
+        # trang nào bên dưới nên không cần đọc lại session.page thêm lần nào nữa).
+        page = session.page
 
         # Hầu hết laptop nằm sau nút "Xem thêm"; bấm cho đến khi nút biến mất / không thêm card mới.
         stale = 0
@@ -175,7 +183,7 @@ def main() -> int:
     existing = fetch_existing_source_skus(client, COMPETITOR)
 
     print(
-        f"Discovering '{COMPETITOR}' — {args.category}/{args.brand}"
+        f"Discovering '{COMPETITOR}' (via VN proxy) — {args.category}/{args.brand}"
         f"{' (dry run)' if args.dry else ''}...\n"
     )
     found = discover(args.brand, args.category)
