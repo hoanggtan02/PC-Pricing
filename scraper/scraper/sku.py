@@ -1333,6 +1333,13 @@ def software_sku(name: str | None) -> str | None:
         return None
     BRAND = brand.upper()
 
+    # Phân biệt bản Microsoft ESD (Key điện tử) và FPP (Hộp vật lý) tránh trùng lặp SKU gây sót sản phẩm
+    is_esd = False
+    if BRAND == "MICROSOFT":
+        low_name = name.lower()
+        if any(kw in low_name for kw in ["esd", "điện tử", "dien tu", "online", "dwnld", "key điện tử", "download"]):
+            is_esd = True
+
     # Bắt TẤT CẢ cụm số lượng trong tên (không chỉ cụm ĐẦU TIÊN) — "1Server + 5PCS" có 2 cụm, cả
     # hai đều là định danh thật của gói combo server+client (xem BUG #1/#2 ở docstring khối).
     qty_matches = list(_SW_QTY.finditer(name))
@@ -1375,7 +1382,10 @@ def software_sku(name: str | None) -> str | None:
         unit = "Y" if re.search(r"năm|nam|year", duration.group(2), re.IGNORECASE) else "M"
         parts.append(f"{duration.group(1)}{unit}")
 
-    return "-".join(parts).upper().replace(" ", "-")
+    sku = "-".join(parts).upper().replace(" ", "-")
+    if is_esd:
+        sku = f"{sku}-ESD"
+    return sku
 
 
 # ── Thiết bị âm thanh: tai nghe / loa / micro ──────────────────────────────────────────────────
