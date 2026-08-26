@@ -80,6 +80,9 @@ brands:
   E-Dra:         [e-dra, edra]
   HKC:           [hkc]
   Hikvision:     [hikvision]
+  EZVIZ:         [ezviz]
+  Imou:          [imou]
+  Dahua:         [dahua]
   VSP:           [vsp]
   Cooler Master: [cooler master, coolermaster]
 
@@ -203,6 +206,31 @@ name_prefixes:
   - "cong"
   - "curved"
   - "oled"
+  # thiết bị âm thanh — để brand không rơi vào "Tai"/"Loa"/"Micro" khi hãng lạ chưa có
+  - "tai nghe không dây"
+  - "tai nghe không"
+  - "tai nghe bluetooth"
+  - "tai nghe wireless"
+  - "tai nghe gaming"
+  - "tai nghe choàng đầu"
+  - "tai nghe nhét tai"
+  - "tai nghe"
+  - "tainghe"
+  - "headphone"
+  - "headset"
+  - "earphone"
+  - "loa bluetooth"
+  - "loa kéo"
+  - "loa hội nghị"
+  - "loa máy tính"
+  - "loa di động"
+  - "loa trợ giảng"
+  - "loa"
+  - "speaker"
+  - "micro"
+  - "microphone"
+  - "form tai nghe"
+  - "form"
   # thiết bị mạng — để brand không rơi vào "Router"/"Phát"/"Switch" khi hãng lạ chưa có
   - "thiết bị mạng"          # "THIẾT BỊ MẠNG Planet ..." -> tránh brand="Thiết"
   - "thiet bi mang"

@@ -1335,21 +1335,30 @@ _AUDIO_FILLERS = {
     "true", "tws", "sport", "pro", "plus", "max", "mini", "light", "ultra",
     "noise", "cancelling", "cancellation", "open", "ear", "in-ear", "over-ear",
     "on-ear", "headband", "neckband", "earbuds", "hands-free", "handsfree",
+    "kids", "uc", "ms", "ii", "iii", "se",
     "di", "động", "dong", "máy", "may", "hội", "nghị", "nghi", "trợ",
     "giảng", "không", "dây", "day", "choàng", "nhét", "tai",
     "2.1", "2.0", "1.0",
 }
-# Loại phụ kiện âm thanh
+# Loại phụ kiện âm thanh — THỨ TỰ QUAN TRỌNG: pattern DÀI hơn phải đứng TRƯỚC pattern ngắn
+# hơn để regex alternation ưu tiên match đúng (vd "loa bluetooth di dong" phải match trước "loa bluetooth").
 _AUDIO_PREFIX = re.compile(
-    r"^\s*(tai\s*nghe|tainghe|headphone|headset|earphone|loa|speaker|micro(?:phone)?)\s*",
+    r"^\s*(?:"
+    r"tai\s*nghe\s*(?:khong\s*day|không\s*dây|bluetooth|wireless|gaming|choang\s*dau|nhet\s*tai)?|"
+    r"tainghe|headphone|headset|earphone|"
+    r"loa\s*(?:tro\s*giang\s*di\s*dong|bluetooth\s*di\s*dong|hoi\s*nghi|may\s*tinh|"
+    r"di\s*dong|keo|bluetooth|tro\s*giang)|"
+    r"loa|speaker|micro(?:phone)?|"
+    r"form\s*tai\s*nghe|form"
+    r")\s*",
     re.I,
 )
 
 
 def audio_sku(name: str | None) -> str | None:
     """BRAND-MODEL cho thiết bị âm thanh (tai nghe / loa / micro), ví dụ "LOGITECH-ZONE305",
-    "CREATIVE-PEBBLE-PRO". Fallback dùng model words nếu không có token chữ+số — đủ unique vì
-    thương hiệu đã tách riêng."""
+    "CREATIVE-PEBBLE-PRO". Lấy model bằng vị trí: bắt đầu NGAY SAU brand token, lấy tất cả
+    token cho đến khi gặp màu/filler/số trần/đầu ngoặc."""
     from .brand import brand_of
 
     if not name:
@@ -1362,38 +1371,119 @@ def audio_sku(name: str | None) -> str | None:
 
     # Bỏ tiền tố loại sản phẩm ("Tai nghe", "Loa", "Micro…") rồi tách token.
     body = _AUDIO_PREFIX.sub("", name)
-    toks = [t for t in re.split(r"[\s(),/]+", body) if t]
+    # Bỏ phần trong ngoặc TRƯỚC khi tách token — mã trong ngoặc (981-001459, POCKETS-BK)
+    # thường là product ID / SKU nội bộ, KHÔNG phải model.
+    body = re.sub(r"\([^)]*\)", " ", body)
+    toks = [t for t in re.split(r"[\s,]+", body) if t]
 
-    # Bỏ brand token, từ-spec, và màu sắc (đuôi tên thường là "(Black)", "(White)").
-    model_toks = [
-        t for t in toks
-        if t.lower() not in brand_toks
-        and t.lower() not in _AUDIO_FILLERS
-        and t.lower() not in _AUDIO_COLORS
-        and not re.fullmatch(r"\d+", t)            # số trần (mã trong ngoặc)
-        and not re.fullmatch(r"[a-z]+", t, re.I)   # pure-alpha filler (Color, Gaming…)
-    ]
+    # Tìm vị trí brand token đầu tiên trong danh sách token.
+    brand_idx = None
+    for i, t in enumerate(toks):
+        if t.lower() in brand_toks:
+            brand_idx = i
+            break
+    if brand_idx is None:
+        return None
+
+    # Thu thập model tokens: bắt đầu SAU brand, dừng ở màu/spec/số trần.
+    model_toks: list[str] = []
+    for t in toks[brand_idx + 1:]:
+        tl = t.lower()
+        # Dừng tại màu sắc (Black, White, Đen, Trắng…) — phần sau là spec/color.
+        if tl in _AUDIO_COLORS:
+            break
+        # Dừng tại spec/filler (Gaming, Bluetooth, Wireless, MS, UC, Stereo…).
+        if tl in _AUDIO_FILLERS:
+            break
+        # Dừng tại số trần (mã trong ngoặc đã bị strip, nhưng còn sót số dạng standalone).
+        if re.fullmatch(r"\d+", t):
+            break
+        model_toks.append(t)
+
+    if not model_toks:
+        return None
+
+    # Ưu tiên token chữ+số dài nhất (Zone305, X1S, G7, M3).
+    mixed = [t for t in model_toks if re.search(r"\d", t)]
+    if mixed:
+        code = max(mixed, key=len)
+        return f"{BRAND}-{code}".upper().replace(" ", "-")
+
+    # Fallback: dùng model words — lấy TẤT CẢ token model (giữ vị trí, không sort length)
+    # để "Sound Blaster" không bị tách, "G PRO" không mất "G".
+    if model_toks:
+        # Giới hạn 4 token để tránh SKU quá dài.
+        parts = model_toks[:4]
+        return f"{BRAND}-{'-'.join(parts)}".upper().replace(" ", "-")
+
+    return None
+
+
+# ── Camera an ninh ──────────────────────────────────────────────────────────────────────────────
+# Tên đọc "<loại> <mô tả> <BRAND> <MODEL> (<spec>)", ví dụ "Camera IP WiFi EZVIZ H6C 3K 5MP",
+# "Camera Tenda CP6". Định danh = BRAND + MODEL. Camera model thường NGẮN (H6C, CP6, C6N) nên
+# network_sku (yêu cầu token ≥4) bỏ sót. Fallback: lấy token chữ+số ngắn nhất ≥2 ký tự.
+_CAMERA_PREFIX = re.compile(
+    r"^\s*(?:camera"
+    r"(?:\s+ip)?"
+    r"(?:\s+wi[\- ]?fi(?:\s+(?:trong\s+nh(?:a|à)|ngo(?:ai|ài)\s+tr(?:oi|ời)))?)?"
+    r"(?:\s+quay\s*qu(?:e|ê)t(?:\s+th(?:o|ô)ng\s*minh)?)?"
+    r")\s*",
+    re.I,
+)
+_CAMERA_SPEC = re.compile(
+    r"^(ip|wifi|wlan|ngoai|ngoài|trong|quay|quet|quẹt|thông|minh|thong|3k|2k|4k|5mp|4mp|3mp|"
+    r"2mp|1mp|mp|led|ir|night|color|pan|tilt|zoom|sd|poe|onvif|cloud|storage|"
+    r"inden|outdoor|indoor|floodlight|spotlight|doorbell|chime)$",
+    re.I,
+)
+
+
+def camera_sku(name: str | None) -> str | None:
+    """BRAND-MODEL cho camera an ninh, ví dụ "EZVIZ-H6C", "TENDA-CP6"."""
+    from .brand import brand_of
+
+    if not name:
+        return None
+    # Strip prefix + location + parenthetical code TRƯỚC khi detect brand — nếu không,
+    # "Camera" / "ngoai troi" bị nhận nhầm là brand.
+    body = _CAMERA_PREFIX.sub("", name)
+    body = re.sub(r"\([^)]*\)", " ", body)
+    body = re.sub(r"\b(?:ngoai\s*troi|ngoài\s*trời|trong\s*nh(?:a|à))\b", " ", body, flags=re.I)
+
+    brand = brand_of(body)
+    if brand.lower() == "other":
+        return None
+    BRAND = brand.upper()
+    brand_toks = set(brand.lower().replace("-", " ").split())
+    toks = [t for t in re.split(r"[\s,]+", body) if t]
+
+    brand_idx = None
+    for i, t in enumerate(toks):
+        if t.lower() in brand_toks:
+            brand_idx = i
+            break
+    if brand_idx is None:
+        return None
+
+    model_toks: list[str] = []
+    for t in toks[brand_idx + 1:]:
+        tl = t.lower()
+        if tl in _AUDIO_COLORS or tl in _AUDIO_FILLERS or _CAMERA_SPEC.match(t):
+            break
+        if re.fullmatch(r"\d+", t):
+            break
+        model_toks.append(t)
+
+    if not model_toks:
+        return None
+
+    mixed = [t for t in model_toks if re.search(r"\d", t)]
+    if mixed:
+        return f"{BRAND}-{max(mixed, key=len)}".upper().replace(" ", "-")
 
     if model_toks:
-        # Token chữ+số (Zone305, X1S, G7, M3) — ưu tiên cái dài nhất.
-        mixed = [t for t in model_toks if re.search(r"\d", t)]
-        if mixed:
-            code = max(mixed, key=len)
-            return f"{BRAND}-{code}".upper().replace(" ", "-")
-
-    # Fallback: dùng model words (không chữ+số, nhưng có ý nghĩa: Pebble, Evolve, Sound, Blaster).
-    # Chỉ cần brand + 2 token dài nhất là đủ phân biệt.
-    alpha_model = [
-        t for t in toks
-        if t.lower() not in brand_toks
-        and t.lower() not in _AUDIO_FILLERS
-        and t.lower() not in _AUDIO_COLORS
-        and not re.fullmatch(r"\d+", t)
-        and len(t) >= 2
-    ]
-    if alpha_model:
-        top = sorted(alpha_model, key=len, reverse=True)[:2]
-        return f"{BRAND}-{'-'.join(top)}".upper().replace(" ", "-")
+        return f"{BRAND}-{'-'.join(model_toks[:3])}".upper().replace(" ", "-")
 
     return None
 
@@ -1430,8 +1520,8 @@ _CATEGORY_SKU = {
     "wlan_controller": network_sku,
     # phần mềm bản quyền — không có mã part, khoá theo tên + số thiết bị + thời hạn
     "software": software_sku,
-    # camera an ninh — "BRAND MODEL" giống thiết bị mạng
-    "camera": network_sku,
+    # camera an ninh — model ngắn, dùng camera_sku riêng
+    "camera": camera_sku,
     # thiết bị âm thanh — model ngắn/alpha, dùng audio_sku riêng
     "audio": audio_sku,
 }
