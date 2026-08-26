@@ -1246,33 +1246,83 @@ def mainboard_sku(name: str | None) -> str | None:
 # and Student 2024", "Windows 11 Pro FPP".
 #
 # KHÔNG có mã part như phần cứng — định danh là chính TÊN SẢN PHẨM còn lại sau khi bỏ filler, cộng
-# với SỐ THIẾT BỊ/THỜI HẠN tách riêng thành hậu tố. Số thiết bị + thời hạn LÀ một phần định danh
-# thật: Kaspersky "3 Thiết Bị / 1 Năm" và "5 Thiết Bị / 1 Năm" và "3 Thiết Bị / 2 Năm" là BA gói
-# khác nhau, giá khác nhau thật — gộp chung sẽ ghi đè nhau trong catalog và so giá sai (cùng lớp
-# lỗi với vụ RAM/CPU trùng SKU).
+# với SỐ LƯỢNG (PC/User/Server)/THỜI HẠN tách riêng thành hậu tố. Số lượng + thời hạn LÀ một phần
+# định danh thật: Kaspersky "3 Thiết Bị / 1 Năm" và "5 Thiết Bị / 1 Năm" và "3 Thiết Bị / 2 Năm" là
+# BA gói khác nhau, giá khác nhau thật — gộp chung sẽ ghi đè nhau trong catalog và so giá sai (cùng
+# lớp lỗi với vụ RAM/CPU trùng SKU).
+#
+# BUG ĐÃ SỬA (2026-08, phát hiện từ log thật `discover_tnc --category software --dry`):
+#
+# 1. "diệt"/"virus" KHÔNG nằm trong filler (_SW_SPEC cũ) — nhưng đây là mô tả CHUNG của cả category
+#    (mọi sản phẩm software đều có "diệt virus" hoặc không), không phân biệt SẢN PHẨM nào với sản
+#    phẩm nào. Vì core[:4] giới hạn CHỈ 4 token định danh, hai từ chung chung này chiếm mất 2/4 suất,
+#    đẩy token PHÂN BIỆT THẬT (ví dụ "1Server") ra ngoài giới hạn → bị cắt mất.
+#    Ví dụ thật: "Kaspersky KSOS 1Server + 5PCS" và "... + 10PCS" — sau lọc filler, core =
+#    [DIỆT, VIRUS, KSOS, 1SERVER, (5PCS bị cắt)] → cả hai gói (giá khác nhau: 3.190.000đ vs
+#    3.690.000đ) RA CÙNG MỘT SKU "KASPERSKY-DIỆT-VIRUS-KSOS-1SERVER", một trong hai bị ghi đè mất.
+#
+# 2. _SW_DEVICES cũ dùng \bpc\b (ranh giới từ NGAY SAU "pc") nên KHÔNG khớp "5PCS"/"10PCS" (chữ "S"
+#    liền sau phá ranh giới từ) — số lượng máy trong "1Server + 5PCS" chưa từng được tách ra làm hậu
+#    tố như thiết kế ban đầu, nó chỉ tình cờ còn sót trong core rồi bị bug #1 cắt mất.
+#
+# 3. fpp/oem/retail/box/tem/hologram từng bị coi là FILLER (bỏ đi) trong _SW_SPEC cũ — nhưng đây là
+#    hình thức ĐÓNG GÓI/GIẤY PHÉP THẬT, ảnh hưởng giá thật (OEM dán máy rẻ hơn FPP bán lẻ). Ví dụ
+#    thật: "Office Home and Business 2021" (OEM) và "FPP Office Home and Business 2021" (bán lẻ) bị
+#    gộp chung SKU "MICROSOFT-OFFICE-HOME-AND-BUSINESS" dù giá và hình thức bán khác nhau.
+#
+# Sửa: (a) thêm "diệt/virus/và/and" — các từ MÔ TẢ CHUNG không phân biệt sản phẩm — vào filler;
+#      (b) BỎ fpp/oem/retail/esd/box/tem/hologram khỏi filler (giữ lại làm token định danh thật);
+#      (c) đổi _SW_DEVICES → _SW_QTY: khớp CẢ số nhiều ("pcs", "users", "devices", "servers"/"svr"),
+#          bắt TẤT CẢ các cụm số lượng trong tên (không chỉ cụm đầu tiên — "1Server + 5PCS" có 2
+#          cụm, cả hai đều là định danh thật của gói combo server+client);
+#      (d) nâng trần core[:4] → core[:6] — tên tiếng Việt bị tách nhiều âm tiết hơn tiếng Anh nên
+#          cần nhiều "suất" token hơn để không cắt mất phần định danh thật (năm phát hành, ENG,
+#          FPP/OEM...).
 _SW_SPEC = re.compile(
-    r"^(phần|phan|mềm|mem|bản|ban|quyền|quyen|key|license|cho|digital|download|esd|box|fpp|oem|"
-    r"retail|tem|hologram|new|chính|chinh|hãng|hang|vĩnh|vinh|viễn|vien|trọn|tron|đời|doi|"
+    r"^(phần|phan|mềm|mem|bản|ban|quyền|quyen|key|license|cho|digital|download|new|"
+    r"chính|chinh|hãng|hang|vĩnh|vinh|viễn|vien|trọn|tron|đời|doi|"
     r"kích|kich|hoạt|hoat|active|code|activation|"
     r"điện|dien|tử|tu|online|dwnld|dl|all|lng|lang|language|pk|pack|package|lic|"
-    r"64bit|32bit|64-bit|32-bit|x64|x86|bit|apac|em|nr)$",
-    re.I,
+    r"64bit|32bit|64-bit|32-bit|x64|x86|bit|apac|em|nr|"
+    # MỚI: mô tả CHUNG của category "software" — không phân biệt sản phẩm nào với sản phẩm nào,
+    # nên phải loại khỏi phần định danh (xem BUG #1 ở trên).
+    r"diệt|diet|virus|và|va|and)$",
+    re.IGNORECASE,
 )
-# Số thiết bị: "3 thiết bị", "3 PC", "1 user", "5 device", "1 máy" — TÁCH RIÊNG khỏi thân tên vì
-# nó là một phần định danh (khác gói = khác giá), không phải filler để bỏ đi.
-_SW_DEVICES = re.compile(r"\b(\d{1,2})\s*(pc|thiết bị|thiet bi|user|device|máy|may)\b", re.I)
+
+# Số LƯỢNG (PC/user/device/máy/server) — TÁCH RIÊNG khỏi thân tên vì nó là một phần định danh
+# (khác gói = khác giá), không phải filler để bỏ đi. Khớp CẢ dạng SỐ NHIỀU ("pcs", "users",
+# "devices", "servers"/"svr") — trước đây \bpc\b không khớp "5PCS" vì chữ "S" liền sau phá ranh
+# giới từ \b (xem BUG #2). "?" sau "s" chấp nhận cả số ít lẫn số nhiều.
+_SW_QTY = re.compile(
+    r"\b(\d{1,3})\s*(pcs?|thiết\s*bị|thiet\s*bi|users?|devices?|máy|may|servers?|svr)\b",
+    re.IGNORECASE,
+)
 # Thời hạn: "1 năm", "12 tháng", "2 year" — cũng là một phần định danh, tách riêng như trên.
-_SW_DURATION = re.compile(r"\b(\d{1,2})\s*(năm|nam|year|tháng|thang|month)\b", re.I)
-# Mã sản phẩm phần mềm (ví dụ KW9-00664, FQC-10572, EP2-06604) — loại bỏ để khớp chéo dễ hơn
-_SW_PART = re.compile(r"\b[A-Z0-9]{3,4}-[A-Z0-9]{5}\b", re.I)
+_SW_DURATION = re.compile(r"\b(\d{1,2})\s*(năm|nam|years?|tháng|thang|months?)\b", re.IGNORECASE)
+# Mã sản phẩm phần mềm (ví dụ KW9-00664, FQC-10572, EP2-06604) — loại bỏ để khớp chéo dễ hơn.
+_SW_PART = re.compile(r"\b[A-Z0-9]{3,4}-[A-Z0-9]{5}\b", re.IGNORECASE)
+
+
+def _sw_qty_tag(unit: str) -> str:
+    """Chuẩn hoá đơn vị số lượng về một hậu tố ngắn: server -> SRV, user -> USER, còn lại
+    (pc/pcs/thiết bị/device/máy) -> PC."""
+    u = unit.lower().replace(" ", "")
+    if u.startswith(("server", "svr")):
+        return "SRV"
+    if u.startswith("user"):
+        return "USER"
+    return "PC"
 
 
 def software_sku(name: str | None) -> str | None:
-    """BRAND-<TÊN SẢN PHẨM>-<SỐ THIẾT BỊ?>-<THỜI HẠN?> cho phần mềm bản quyền/diệt virus.
+    """BRAND-<TÊN SẢN PHẨM>-<SỐ LƯỢNG?>-<THỜI HẠN?> cho phần mềm bản quyền/diệt virus.
 
     Không có mã part như phần cứng nên khoá theo brand + các token định danh còn lại của tên (bỏ
-    filler: "phần mềm", "bản quyền", "key"...). Số thiết bị/thời hạn được TÁCH RIÊNG thành hậu tố
-    vì chúng LÀ một phần định danh — bỏ đi sẽ gộp nhầm các gói khác giá vào một SKU.
+    filler THẬT SỰ chung chung: "phần mềm", "bản quyền", "key", "diệt virus"...). Số lượng
+    (PC/User/Server) và thời hạn được TÁCH RIÊNG thành hậu tố vì chúng LÀ một phần định danh — bỏ
+    đi sẽ gộp nhầm các gói khác giá vào một SKU. Hình thức đóng gói (FPP/OEM/ESD...) được GIỮ LẠI
+    làm token định danh vì nó ảnh hưởng giá thật, không phải filler.
     """
     from .brand import brand_of
 
@@ -1283,19 +1333,22 @@ def software_sku(name: str | None) -> str | None:
         return None
     BRAND = brand.upper()
 
-    devices = _SW_DEVICES.search(name)
+    # Bắt TẤT CẢ cụm số lượng trong tên (không chỉ cụm ĐẦU TIÊN) — "1Server + 5PCS" có 2 cụm, cả
+    # hai đều là định danh thật của gói combo server+client (xem BUG #1/#2 ở docstring khối).
+    qty_matches = list(_SW_QTY.finditer(name))
     duration = _SW_DURATION.search(name)
 
-    # Bỏ ngoặc, mã part-number + cụm số-thiết-bị/thời-hạn khỏi thân tên trước khi tách
-    # token, để không lẫn vào phần định danh dưới dạng số trần vô nghĩa.
+    # Bỏ ngoặc, mã part-number + mọi cụm số-lượng/thời-hạn khỏi thân tên trước khi tách token, để
+    # không lẫn vào phần định danh dưới dạng số trần vô nghĩa.
     body = re.sub(r"\([^)]*\)", " ", name)
     body = _SW_PART.sub(" ", body)
-    if devices:
-        body = body.replace(devices.group(0), " ")
+    for m in qty_matches:
+        body = body.replace(m.group(0), " ")
     if duration:
         body = body.replace(duration.group(0), " ")
 
-    toks = [t for t in re.split(r"[\s,/]+", body) if t]
+    # Thêm "+" vào ký tự tách — các gói combo dùng "+" nối "1Server + 5PCS".
+    toks = [t for t in re.split(r"[\s,/+]+", body) if t]
     brand_toks = set(brand.lower().replace("-", " ").split())
     core: list[str] = []
     for t in toks:
@@ -1308,13 +1361,20 @@ def software_sku(name: str | None) -> str | None:
     if not core:
         return None
 
-    parts = [BRAND, *core[:4]]  # giới hạn 4 token định danh — đủ phân biệt, tránh SKU quá dài
-    if devices:
-        unit = "PC" if re.search(r"pc|máy|may|thiết bị|thiet bi", devices.group(2), re.I) else "USER"
-        parts.append(f"{devices.group(1)}{unit}")
+    # Trần nâng từ 4 lên 6 (xem BUG #1/(d)) — đủ giữ token định danh thật (năm phát hành, ENG,
+    # FPP/OEM...) mà không làm SKU quá dài.
+    parts = [BRAND, *core[:6]]
+
+    # Ghép TẤT CẢ cụm số lượng tìm được, theo đúng thứ tự xuất hiện trong tên gốc — gói combo
+    # "1Server + 5PCS" ra hậu tố "-1SRV-5PC", phân biệt rõ với "1Server + 10PCS" ("-1SRV-10PC").
+    for m in qty_matches:
+        num, unit = m.group(1), m.group(2)
+        parts.append(f"{num}{_sw_qty_tag(unit)}")
+
     if duration:
-        unit = "Y" if re.search(r"năm|nam|year", duration.group(2), re.I) else "M"
+        unit = "Y" if re.search(r"năm|nam|year", duration.group(2), re.IGNORECASE) else "M"
         parts.append(f"{duration.group(1)}{unit}")
+
     return "-".join(parts).upper().replace(" ", "-")
 
 
@@ -1518,7 +1578,7 @@ _CATEGORY_SKU = {
     "switch": network_sku,
     "accesspoint": network_sku,
     "wlan_controller": network_sku,
-    # phần mềm bản quyền — không có mã part, khoá theo tên + số thiết bị + thời hạn
+    # phần mềm bản quyền — không có mã part, khoá theo tên + số lượng + thời hạn
     "software": software_sku,
     # camera an ninh — model ngắn, dùng camera_sku riêng
     "camera": camera_sku,

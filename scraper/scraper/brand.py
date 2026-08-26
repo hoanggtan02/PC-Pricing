@@ -48,7 +48,9 @@ def _brand_re() -> dict[str, re.Pattern]:
 def _prefix_re() -> re.Pattern:
     prefixes = _data().get("name_prefixes") or []
     alt = "|".join(map(re.escape, prefixes))
-    return re.compile(rf"^\s*(?:{alt})\s*", re.IGNORECASE)
+    # \b sau nhóm ensures prefix là từ ĐẦY ĐỦ, không nằm giữa chuỗi
+    # (vd "sound" không match trong "soundmax", "card" không match trong "soundcard").
+    return re.compile(rf"^\s*(?:{alt})\b\s*", re.IGNORECASE)
 
 
 # Tương thích ngược: các thương hiệu ta từng lặp qua trong quy trình laptop.
