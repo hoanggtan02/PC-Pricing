@@ -5,10 +5,20 @@ bán laptop Dell — tìm kiếm "laptop dell" trên trang này chủ yếu ra p
 Ta lọc theo tên để lấy đúng laptop và ghi lại bất cứ thứ gì xuất hiện (thường là không có gì, và
 điều đó vẫn ổn).
 
-Các selector đã xác nhận (DOM sau khi render):
-    name  : h3
-    url   : anchor của sản phẩm (slug = phần đuôi mã model)
-    price : .ae-price--primary (giá hiện tại); KHÔNG phải .ae-price--compare (giá gốc gạch ngang)
+QUAN TRỌNG — HAI THEME KHÁC NHAU trên cùng site (phát hiện 2026-08 từ bug thật: category
+"software" timeout hàng loạt ở PRICE_SELECTOR cũ):
+  1. Trang TÌM KIẾM (dùng cho laptop, /search?query=...) — markup cũ, đã xác nhận:
+         card  : (không có selector card riêng, quét ngược từ phần tử giá)
+         price : .ae-price--primary
+  2. Trang CATEGORY TĨNH (dùng cho mọi category khác qua `paths.memoryzone`, ví dụ
+     /phan-mem-ban-quyen) — theme Bizweb/Sapo (bizweb.dktcdn.net), markup HOÀN TOÀN KHÁC, xác
+     nhận từ HTML thật của https://memoryzone.com.vn/phan-mem-ban-quyen:
+         card  : .item_product_main
+         name  : .product-name a
+         price : .price-box .price      (giá hiện tại; .compare-price là giá gốc gạch ngang)
+     .ae-price--primary KHÔNG TỒN TẠI trên các trang này — dùng nhầm selector khiến
+     goto_with_retry() chờ đủ timeout rồi bỏ cuộc cho MỌI category không phải laptop, không phải
+     lỗi mạng/chặn bot. Hai nhánh selector dưới đây tách riêng cho từng loại trang.
 
 Chỉ khớp: chỉ ghi lại giá cho các SKU đã có sẵn trong `products` (danh mục của TNC).
 
@@ -20,6 +30,7 @@ thì chỉ được refresh URL (upsert_sources), KHÔNG ghi thêm dòng price_h
 Cách dùng:
     python -m scraper.discover_memoryzone --dry
     python -m scraper.discover_memoryzone
+    python -m scraper.discover_memoryzone --category software --dry
 """
 
 from __future__ import annotations
@@ -54,7 +65,15 @@ BRANDS = {
     "gigabyte": "https://memoryzone.com.vn/laptop-gigabyte",
 }
 
+# Trang TÌM KIẾM (laptop) — markup cũ, đã xác nhận hoạt động, GIỮ NGUYÊN.
 PRICE_SELECTOR = ".ae-price--primary"
+
+# Trang CATEGORY TĨNH (mọi category khác qua paths.memoryzone) — theme Bizweb/Sapo, xác nhận từ
+# HTML thật của /phan-mem-ban-quyen (xem docstring đầu file). KHÔNG dùng chung với PRICE_SELECTOR.
+CATEGORY_CARD_SELECTOR = ".item_product_main"
+CATEGORY_NAME_SELECTOR = ".product-name a"
+CATEGORY_PRICE_SELECTOR = ".price-box .price"
+CATEGORY_PAGE_CAP = 30  # chốt an toàn cho phân trang ?page=N; dừng sớm khi trang không thêm gì mới.
 
 
 def _digits_to_int(text: str) -> int | None:
@@ -62,78 +81,137 @@ def _digits_to_int(text: str) -> int | None:
     return int(m.group(0).replace(".", "")) if m else None
 
 
-def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
-    """Trả về [{name, price, url}] cho các sản phẩm trên trang tìm kiếm đã render.
+def _discover_laptop(page, brand: str) -> list[dict]:
+    """Trang tìm kiếm laptop — logic CŨ, không đổi (đã xác nhận hoạt động)."""
+    search_url = BRANDS[brand]
+    if not goto_with_retry(page, search_url, PRICE_SELECTOR, label=COMPETITOR):
+        return []
 
-    Laptop (mặc định) dùng URL per-brand + lọc /^laptop|macbook/. Các danh mục khác chạy theo
-    danh mục: tìm cả danh mục, giữ mọi card sản phẩm, lọc theo name_match ở Python.
-    """
-    is_laptop = category == "laptop"
-    excl_re = name_exclude_re(category)
-    if is_laptop:
-        search_url, name_re = BRANDS[brand], None
-    else:
-        search_url = resolve_url("memoryzone", category)
-        name_re = name_match_re(category)
+    last, stable = -1, 0
+    for _ in range(40):
+        count = page.eval_on_selector_all(PRICE_SELECTOR, "(els)=>els.length")
+        stable = stable + 1 if count == last else 0
+        if stable >= 4:
+            break
+        last = count
+        page.mouse.wheel(0, 6000)
+        page.wait_for_timeout(1500)
+
+    items = page.eval_on_selector_all(
+        PRICE_SELECTOR,
+        """
+        (prices) => {
+          const out = [];
+          const seen = new Set();
+          for (const p of prices) {
+            let card = p;
+            for (let i = 0; i < 6 && card.parentElement; i++) {
+              card = card.parentElement;
+              if (card.querySelector('a[href]') && card.querySelector('h3')) break;
+            }
+            const a = card.querySelector('a[href]');
+            const h3 = card.querySelector('h3');
+            if (!a || !h3) continue;
+            const href = (a.getAttribute('href') || '').split('?')[0];
+            if (!href || seen.has(href)) continue;
+            const name = h3.innerText.trim();
+            if (!/^(laptop|macbook)/i.test(name)) continue;
+            seen.add(href);
+            out.push({ name, price: p.innerText.trim(), url: href, card_text: (card.textContent || '') });
+          }
+          return out;
+        }
+        """,
+    )
+    results: list[dict] = []
+    for it in items:
+        price = _digits_to_int(it["price"])
+        href = it["url"]
+        url = (BASE_URL + href) if href and href.startswith("/") else href
+        if price:
+            in_stock = stock_is_in(it.get("card_text"))
+            results.append({"name": it["name"], "price": price, "url": url, "in_stock": in_stock})
+    return results
+
+
+def _discover_category(page, category: str) -> list[dict]:
+    """Trang category tĩnh (theme Bizweb/Sapo) — markup KHÁC hẳn trang tìm kiếm, xem docstring
+    đầu file. Phân trang qua ?page=N (kiểu Bizweb phổ biến); dừng khi trang không thêm sản phẩm
+    mới nào, hoặc chạm CATEGORY_PAGE_CAP."""
+    search_url = resolve_url("memoryzone", category)
     if not search_url:
         return []
-    results: list[dict] = []
-    with browser_page(use_proxy=False) as page:
-        if not goto_with_retry(page, search_url, PRICE_SELECTOR, label=COMPETITOR):
-            return results
+    excl_re = name_exclude_re(category)
+    name_re = name_match_re(category)
 
-        last, stable = -1, 0
-        for _ in range(40):
-            count = page.eval_on_selector_all(PRICE_SELECTOR, "(els)=>els.length")
-            stable = stable + 1 if count == last else 0
-            if stable >= 4:
+    results: list[dict] = []
+    seen_urls: set[str] = set()
+    for page_num in range(1, CATEGORY_PAGE_CAP + 1):
+        if page_num == 1:
+            if not goto_with_retry(page, search_url, CATEGORY_CARD_SELECTOR, label=COMPETITOR):
                 break
-            last = count
-            page.mouse.wheel(0, 6000)
-            page.wait_for_timeout(1500)
+        else:
+            joiner = "&" if "?" in search_url else "?"
+            page_url = f"{search_url}{joiner}page={page_num}"
+            try:
+                page.goto(page_url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_selector(CATEGORY_CARD_SELECTOR, timeout=10000)
+            except Exception:
+                break  # trang chậm/lỗi/hết trang — dừng, giữ lại những gì đã thu thập được
 
         items = page.eval_on_selector_all(
-            PRICE_SELECTOR,
+            CATEGORY_CARD_SELECTOR,
             """
-            (prices, isLaptop) => {
-              const out = [];
-              const seen = new Set();
-              for (const p of prices) {
-                let card = p;
-                for (let i = 0; i < 6 && card.parentElement; i++) {
-                  card = card.parentElement;
-                  if (card.querySelector('a[href]') && card.querySelector('h3')) break;
+            (cards) => {
+                const out = [];
+                for (const card of cards) {
+                    const nameEl = card.querySelector('.product-name a');
+                    const priceEl = card.querySelector('.price-box .price');
+                    if (!nameEl || !priceEl) continue;
+                    const name = nameEl.innerText.trim();
+                    const href = nameEl.getAttribute('href') || '';
+                    const price = priceEl.innerText.trim();
+                    out.push({ name, price, url: href, card_text: (card.innerText || '') });
                 }
-                const a = card.querySelector('a[href]');
-                const h3 = card.querySelector('h3');
-                if (!a || !h3) continue;
-                const href = (a.getAttribute('href') || '').split('?')[0];
-                if (!href || seen.has(href)) continue;
-                const name = h3.innerText.trim();
-                // Laptop: bỏ qua balo/túi/phụ kiện. Danh mục khác lọc ở Python (name_match).
-                if (isLaptop && !/^(laptop|macbook)/i.test(name)) continue;
-                seen.add(href);
-                // Kèm text thẻ để Python phát hiện hết hàng ("Liên hệ"/"Hết hàng"). DÙNG textContent
-                // (KHÔNG innerText): innerText rỗng cho thẻ ngoài màn hình → mất tín hiệu OOS.
-                out.push({ name, price: p.innerText.trim(), url: href, card_text: (card.textContent || '') });
-              }
-              return out;
+                return out;
             }
             """,
-            is_laptop,
         )
+
+        new_on_page = 0
         for it in items:
             name = it["name"]
-            if (excl_re and excl_re.search(name)) or (not is_laptop and not (name_re and name_re.search(name))):
+            if excl_re and excl_re.search(name):
+                continue
+            if name_re and not name_re.search(name):
                 continue
             price = _digits_to_int(it["price"])
             href = it["url"]
             url = (BASE_URL + href) if href and href.startswith("/") else href
-            if price:
-                in_stock = stock_is_in(it.get("card_text"))
-                results.append({"name": name, "price": price, "url": url, "in_stock": in_stock})
+            if not price or not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            new_on_page += 1
+            in_stock = stock_is_in(it.get("card_text"))
+            results.append({"name": name, "price": price, "url": url, "in_stock": in_stock})
+
+        if new_on_page == 0:  # trang cuối / không phân trang
+            break
     return results
 
+
+def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
+    """Trả về [{name, price, url, in_stock}] cho các sản phẩm tìm được.
+
+    Laptop (mặc định) dùng URL per-brand + lọc /^laptop|macbook/ trên trang TÌM KIẾM. Các danh
+    mục khác dùng URL category TĨNH của `paths.memoryzone` — theme khác hẳn, xem docstring đầu
+    file — nên dùng hàm trích xuất riêng (_discover_category).
+    """
+    is_laptop = category == "laptop"
+    with browser_page(use_proxy=False) as page:
+        if is_laptop:
+            return _discover_laptop(page, brand)
+        return _discover_category(page, category)
 
 
 def main() -> int:
