@@ -216,6 +216,9 @@ def upsert_sources(client: Client, rows: list[dict]) -> None:
     to_upsert = [r for r in rows if (r["product_sku"], r["competitor"]) not in manual_keys]
     
     if to_upsert:
+        # Đảm bảo mỗi row có is_used — cột NOT NULL, default False
+        for r in to_upsert:
+            r.setdefault("is_used", False)
         client.table("sources").upsert(to_upsert, on_conflict="product_sku,competitor").execute()
 
 

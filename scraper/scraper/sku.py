@@ -1253,7 +1253,9 @@ def mainboard_sku(name: str | None) -> str | None:
 _SW_SPEC = re.compile(
     r"^(phần|phan|mềm|mem|bản|ban|quyền|quyen|key|license|cho|digital|download|esd|box|fpp|oem|"
     r"retail|tem|hologram|new|chính|chinh|hãng|hang|vĩnh|vinh|viễn|vien|trọn|tron|đời|doi|"
-    r"kích|kich|hoạt|hoat|active|code|activation)$",
+    r"kích|kich|hoạt|hoat|active|code|activation|"
+    r"điện|dien|tử|tu|online|dwnld|dl|all|lng|lang|language|pk|pack|package|lic|"
+    r"64bit|32bit|64-bit|32-bit|x64|x86|bit|apac|em|nr)$",
     re.I,
 )
 # Số thiết bị: "3 thiết bị", "3 PC", "1 user", "5 device", "1 máy" — TÁCH RIÊNG khỏi thân tên vì
@@ -1261,6 +1263,8 @@ _SW_SPEC = re.compile(
 _SW_DEVICES = re.compile(r"\b(\d{1,2})\s*(pc|thiết bị|thiet bi|user|device|máy|may)\b", re.I)
 # Thời hạn: "1 năm", "12 tháng", "2 year" — cũng là một phần định danh, tách riêng như trên.
 _SW_DURATION = re.compile(r"\b(\d{1,2})\s*(năm|nam|year|tháng|thang|month)\b", re.I)
+# Mã sản phẩm phần mềm (ví dụ KW9-00664, FQC-10572, EP2-06604) — loại bỏ để khớp chéo dễ hơn
+_SW_PART = re.compile(r"\b[A-Z0-9]{3,4}-[A-Z0-9]{5}\b", re.I)
 
 
 def software_sku(name: str | None) -> str | None:
@@ -1282,19 +1286,20 @@ def software_sku(name: str | None) -> str | None:
     devices = _SW_DEVICES.search(name)
     duration = _SW_DURATION.search(name)
 
-    # Bỏ ngoặc + cụm số-thiết-bị/thời-hạn (đã trích riêng ở trên) khỏi thân tên trước khi tách
-    # token, để "3"/"1" không lẫn vào phần định danh dưới dạng số trần vô nghĩa.
+    # Bỏ ngoặc, mã part-number + cụm số-thiết-bị/thời-hạn khỏi thân tên trước khi tách
+    # token, để không lẫn vào phần định danh dưới dạng số trần vô nghĩa.
     body = re.sub(r"\([^)]*\)", " ", name)
+    body = _SW_PART.sub(" ", body)
     if devices:
         body = body.replace(devices.group(0), " ")
     if duration:
         body = body.replace(duration.group(0), " ")
 
-    toks = [t for t in re.split(r"[\s,]+", body) if t]
+    toks = [t for t in re.split(r"[\s,/]+", body) if t]
     brand_toks = set(brand.lower().replace("-", " ").split())
     core: list[str] = []
     for t in toks:
-        low = t.lower().strip(".,")
+        low = t.lower().strip(".,-")
         if not low or low in brand_toks or _SW_SPEC.match(low):
             continue
         cleaned = re.sub(r"[^\w]", "", t).upper()
@@ -1311,6 +1316,86 @@ def software_sku(name: str | None) -> str | None:
         unit = "Y" if re.search(r"năm|nam|year", duration.group(2), re.I) else "M"
         parts.append(f"{duration.group(1)}{unit}")
     return "-".join(parts).upper().replace(" ", "-")
+
+
+# ── Thiết bị âm thanh: tai nghe / loa / micro ──────────────────────────────────────────────────
+# Tên đọc "<loại> <BRAND> <MODEL> (<màu/mã>)", ví dụ "Tai nghe Logitech Zone 305 (981-001459)",
+# "Loa Creative Pebble Pro 2.0 (White)". Định danh = BRAND + MODEL. Audio products thường không có
+# mã part kiểu phần cứng — model là một hoặc nhiều token chữ (Zone, Pebble, Evolve) đôi khi kèm số
+# (305, 30, 2.0). Fallback: nếu không có token chữ+số, dùng token chữ dài nhất (Pebble, Evolve).
+_AUDIO_COLORS = {
+    "black", "white", "red", "blue", "green", "pink", "purple", "gray", "grey", "silver",
+    "gold", "graphite", "quartz", "midnight", "starlight", "sapphire", "pearl", "matte",
+    "piano", "cream", "lavender", "teal", "aqua", "ice", "ocean", "titan",
+    # tiếng Việt
+    "đen", "trắng", "đỏ", "xanh", "hồng", "tím", "xám", "bạc", "vàng",
+}
+_AUDIO_FILLERS = {
+    "bluetooth", "wireless", "wired", "gaming", "usb", "cable", "stereo", "mono",
+    "true", "tws", "sport", "pro", "plus", "max", "mini", "light", "ultra",
+    "noise", "cancelling", "cancellation", "open", "ear", "in-ear", "over-ear",
+    "on-ear", "headband", "neckband", "earbuds", "hands-free", "handsfree",
+    "di", "động", "dong", "máy", "may", "hội", "nghị", "nghi", "trợ",
+    "giảng", "không", "dây", "day", "choàng", "nhét", "tai",
+    "2.1", "2.0", "1.0",
+}
+# Loại phụ kiện âm thanh
+_AUDIO_PREFIX = re.compile(
+    r"^\s*(tai\s*nghe|tainghe|headphone|headset|earphone|loa|speaker|micro(?:phone)?)\s*",
+    re.I,
+)
+
+
+def audio_sku(name: str | None) -> str | None:
+    """BRAND-MODEL cho thiết bị âm thanh (tai nghe / loa / micro), ví dụ "LOGITECH-ZONE305",
+    "CREATIVE-PEBBLE-PRO". Fallback dùng model words nếu không có token chữ+số — đủ unique vì
+    thương hiệu đã tách riêng."""
+    from .brand import brand_of
+
+    if not name:
+        return None
+    brand = brand_of(name)
+    if brand.lower() == "other":
+        return None
+    BRAND = brand.upper()
+    brand_toks = set(brand.lower().replace("-", " ").split())
+
+    # Bỏ tiền tố loại sản phẩm ("Tai nghe", "Loa", "Micro…") rồi tách token.
+    body = _AUDIO_PREFIX.sub("", name)
+    toks = [t for t in re.split(r"[\s(),/]+", body) if t]
+
+    # Bỏ brand token, từ-spec, và màu sắc (đuôi tên thường là "(Black)", "(White)").
+    model_toks = [
+        t for t in toks
+        if t.lower() not in brand_toks
+        and t.lower() not in _AUDIO_FILLERS
+        and t.lower() not in _AUDIO_COLORS
+        and not re.fullmatch(r"\d+", t)            # số trần (mã trong ngoặc)
+        and not re.fullmatch(r"[a-z]+", t, re.I)   # pure-alpha filler (Color, Gaming…)
+    ]
+
+    if model_toks:
+        # Token chữ+số (Zone305, X1S, G7, M3) — ưu tiên cái dài nhất.
+        mixed = [t for t in model_toks if re.search(r"\d", t)]
+        if mixed:
+            code = max(mixed, key=len)
+            return f"{BRAND}-{code}".upper().replace(" ", "-")
+
+    # Fallback: dùng model words (không chữ+số, nhưng có ý nghĩa: Pebble, Evolve, Sound, Blaster).
+    # Chỉ cần brand + 2 token dài nhất là đủ phân biệt.
+    alpha_model = [
+        t for t in toks
+        if t.lower() not in brand_toks
+        and t.lower() not in _AUDIO_FILLERS
+        and t.lower() not in _AUDIO_COLORS
+        and not re.fullmatch(r"\d+", t)
+        and len(t) >= 2
+    ]
+    if alpha_model:
+        top = sorted(alpha_model, key=len, reverse=True)[:2]
+        return f"{BRAND}-{'-'.join(top)}".upper().replace(" ", "-")
+
+    return None
 
 
 # Per-category identity dispatch. Add a category = add its function here.
@@ -1345,9 +1430,10 @@ _CATEGORY_SKU = {
     "wlan_controller": network_sku,
     # phần mềm bản quyền — không có mã part, khoá theo tên + số thiết bị + thời hạn
     "software": software_sku,
-    # camera an ninh và thiết bị âm thanh — "BRAND MODEL" giống thiết bị mạng
+    # camera an ninh — "BRAND MODEL" giống thiết bị mạng
     "camera": network_sku,
-    "audio": network_sku,
+    # thiết bị âm thanh — model ngắn/alpha, dùng audio_sku riêng
+    "audio": audio_sku,
 }
 
 
