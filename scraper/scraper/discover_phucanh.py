@@ -1,4 +1,9 @@
-"""Scraper khám phá dữ liệu bằng tìm kiếm cho Phúc Anh (phucanh.vn) (Playwright).
+"""Scraper khám phá dữ liệu bằng tìm kiếm cho Phúc Anh (phucanh.vn) (Playwright + proxy Việt Nam).
+
+Phúc Anh chặn theo vùng địa lý các IP ngoài Việt Nam (xác nhận 2026-08 qua test_geoblock_direct.py
+phucanh — goto() không lỗi, nhưng .p-item-group không bao giờ xuất hiện trong 5/5 lần thử: trang
+trả về nội dung chặn/challenge thay vì trang danh mục thật). Nên scraper này định tuyến qua proxy
+VN (use_proxy=True; xem browser.py / .env), giống Phong Vũ / FPT Shop / TGĐĐ.
 
 Các selector đã xác nhận:
     card  : .p-item-group
@@ -6,6 +11,11 @@ Các selector đã xác nhận:
     url   : a.p-img (href)
     price : .p-price2 (giá hiện tại, cần check visible)
     stock : .p-bottom chứa "✔ Có hàng"
+
+DÙNG browser_session (KHÔNG dùng browser_page): trang này cần proxy VN và phân trang qua nhiều
+lần goto() — nếu proxy hết hạn GIỮA lượt phân trang, cần relaunch browser với proxy khác NGAY
+thay vì âm thầm coi đó là "đã hết trang" và cắt cụt category. Xem ghi chú "BUG ĐÃ SỬA" ở đầu
+browser.py.
 """
 
 from __future__ import annotations
@@ -13,7 +23,7 @@ from __future__ import annotations
 import argparse
 import re
 
-from .browser import browser_page, goto_with_retry
+from .browser import browser_session, goto_with_retry
 from .config import is_old_listing_name, name_exclude_re, name_match_re, resolve_url
 from .db import (
     ensure_competitor,
@@ -53,22 +63,23 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
     else:
         base_search_url = resolve_url("phucanh", category)
         name_re = name_match_re(category)
-        
+
     if not base_search_url:
         return []
 
     results: list[dict] = []
-    
-    with browser_page(use_proxy=False) as page:
+
+    with browser_session(use_proxy=True) as session:
         for page_num in range(1, 15):
             url = base_search_url
             if page_num > 1:
                 joiner = "&" if "?" in url else "?"
                 url = f"{url}{joiner}page={page_num}"
-                
-            if not goto_with_retry(page, url, ".p-item-group", label=COMPETITOR):
+
+            if not goto_with_retry(session, url, ".p-item-group", label=COMPETITOR):
                 break
-                
+            page = session.page  # đọc LẠI — có thể vừa được relaunch trong goto_with_retry
+
             items = page.eval_on_selector_all(
                 ".p-item-group",
                 """
@@ -86,7 +97,7 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
                             }
                         }
                         const stock_el = card.querySelector('.p-bottom');
-                        
+
                         if (!name_el) continue;
                         out.push({
                             name: name_el.innerText.trim(),
@@ -99,30 +110,30 @@ def discover(brand: str = "dell", category: str = "laptop") -> list[dict]:
                 }
                 """
             )
-            
+
             if not items:
                 break
-                
+
             for it in items:
                 name = it["name"]
                 if (excl_re and excl_re.search(name)) or (not is_laptop and not (name_re and name_re.search(name))):
                     continue
-                
+
                 price = _digits_to_int(it["price"])
                 href = it["url"]
                 item_url = (BASE_URL + href) if href and href.startswith("/") else href
-                
+
                 card_text_lower = it.get("card_text", "").lower()
                 in_stock = stock_is_in(it["price"]) and not any(
                     term in card_text_lower for term in ["hết hàng", "liên hệ"]
                 )
-                
+
                 if price:
                     results.append({"name": name, "price": price, "url": item_url, "in_stock": in_stock})
-            
+
             if len(items) < 10:
                 break
-                
+
     return results
 
 def main() -> int:
@@ -141,14 +152,14 @@ def main() -> int:
 
     existing = fetch_existing_source_skus(client, COMPETITOR)
 
-    print(f"Discovering '{COMPETITOR}' — {args.category}/{args.brand}{' (dry run)' if args.dry else ''}...\n")
+    print(f"Discovering '{COMPETITOR}' (via VN proxy) — {args.category}/{args.brand}{' (dry run)' if args.dry else ''}...\n")
     found = discover(args.brand, args.category)
     print(f"{len(found)} product(s) parsed; matching against {len(tracked)} SKU(s), {len(existing)} existing.\n")
 
     category_label = args.category.capitalize()
     fallback_url = BRANDS.get(args.brand) if args.category == "laptop" else resolve_url("phucanh", args.category)
     source_rows = []
-    
+
     for item in found:
         sku = derive_sku(item["name"], item.get("url"), category_label)
         if sku is None or sku not in tracked:

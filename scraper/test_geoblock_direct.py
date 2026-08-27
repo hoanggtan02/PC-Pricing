@@ -1,4 +1,4 @@
-"""Test IP hiện tại (KHÔNG proxy) có bị Phong Vũ / FPT Shop / TGDĐ chặn hay không.
+"""Test IP hiện tại (KHÔNG proxy) có bị Phong Vũ / FPT Shop / TGDĐ / Phúc Anh chặn hay không.
 Không cần DB, không cần proxy. Chạy trên máy bạn (VN) HOẶC trên GitHub Actions (non-VN)
 để so sánh trực tiếp.
 
@@ -6,12 +6,19 @@ Cách dùng:
     python test_geoblock_direct.py phongvu
     python test_geoblock_direct.py fptshop
     python test_geoblock_direct.py tgdd
+    python test_geoblock_direct.py phucanh
 
 TGDĐ được thêm vào (2026-08) sau khi category "camera" fail 100% trên CI với
 net::ERR_CONNECTION_TIMED_OUT / Page.goto timeout — nghi IP dải GitHub Actions runner bị TGDĐ
 chặn/rate-limit tạm thời khi nhiều leg matrix (scrape.yml) cùng lúc gõ vào. Test này trả lời dứt
 khoát: chạy TRÊN CHÍNH runner CI (qua workflow test-geoblock.yml) xem TGDĐ có chặn/timeout hay
 không, KHÔNG cần chờ cả lượt scrape.yml đầy đủ (30 leg, hàng giờ) mới biết.
+
+Phúc Anh được thêm vào (2026-08) sau khi category "audio" fail 100% trên CI với
+Page.wait_for_selector timeout (5/5 lần thử) — goto() KHÔNG lỗi (trang tải về bình thường) nhưng
+selector .p-item-group không bao giờ xuất hiện. Cùng triệu chứng với vụ TGDĐ tái chặn: nghi trang
+trả về nội dung chặn/challenge (HTTP 200 nhưng markup khác) cho IP ngoài VN, thay vì trang danh
+mục thật. Test này xác nhận dứt khoát trước khi đổi discover_phucanh.py/sync_prices.py sang proxy.
 """
 from __future__ import annotations
 
@@ -33,6 +40,10 @@ TARGETS = {
     "tgdd": {
         "url": "https://www.thegioididong.com/camera-giam-sat",
         "selector": "li.item .price",
+    },
+    "phucanh": {
+        "url": "https://www.phucanh.vn/tainghe.html",
+        "selector": ".p-item-group",
     },
 }
 
