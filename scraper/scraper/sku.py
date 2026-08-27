@@ -1502,12 +1502,32 @@ _AUDIO_PREFIX = re.compile(
     re.I,
 )
 
+# ── MỚI (2026-08) — hãng dùng SỐ TRẦN làm mã dòng sản phẩm ──────────────────────────────────
+# Một số hãng đặt tên dòng sản phẩm chỉ bằng SỐ, không kèm chữ — ví dụ Jabra: "Biz 1100",
+# "Biz 1500", "Biz 2400", "Evolve2 65", "Speak 750". Với ĐA SỐ brand khác, một token số trần
+# đứng một mình gần như luôn là rác (năm sản xuất, giá, watt…) nên bị loại ở bước lọc bên dưới —
+# nhưng với các hãng trong set này, số đó CHÍNH LÀ định danh phân biệt hai sản phẩm khác giá.
+#
+# BUG ĐÃ SỬA: trước khi có set này, "Jabra Biz 1100 Duo USB" và "Jabra Biz 1500 Duo USB" (hai tai
+# nghe khác nhau, giá khác nhau thật) đều bị rút gọn về chung một SKU "JABRA-BIZ-DUO" vì "1100"/
+# "1500" bị quy tắc lọc số trần loại bỏ, chỉ còn "Biz"+"Duo" sống sót. Một nguồn (An Phát PC) ghi
+# nhận giá của bản 1100 nhưng lại bị gắn vào đúng dòng catalog của bản 1500 do hai bản trùng SKU.
+#
+# Mở rộng set này khi gặp thêm hãng có kiểu đặt tên số-trần-là-mã-dòng tương tự.
+_AUDIO_NUMERIC_MODEL_BRANDS = {"jabra"}
+# Chỉ giữ số trần dài 2-5 chữ số (65, 750, 1100, 2400, 8300…) — tránh vô tình giữ lại một chữ số
+# lẻ lạc vào tên do tách token sai (ví dụ phần còn sót của "2.0"/"5.1" nếu lọt qua bước trước).
+_AUDIO_MODEL_NUMBER = re.compile(r"^\d{2,5}$")
+
 
 def audio_sku(name: str | None) -> str | None:
     """BRAND-MODEL cho thiết bị âm thanh (tai nghe / loa / micro), ví dụ "LOGITECH-G-PRO",
     "EDIFIER-W820NB". Dùng chiến lược KHÔNG PHỤ THUỘC VỊ TRÍ: thu thập tất cả token không phải
     brand/filler/màu, rồi ưu tiên token chứa chữ số làm mã model — khắc phục lỗi cũ (brand_idx=None
     cho brand dạng gạch nối như E-Dra, và filler "Pro/Gen/II" chặn token model nằm sau).
+
+    Với các hãng trong `_AUDIO_NUMERIC_MODEL_BRANDS` (vd Jabra), số trần đứng một mình KHÔNG bị
+    loại — nó chính là mã dòng sản phẩm (xem ghi chú BUG ở khối hằng số phía trên).
     """
     from .brand import brand_of
 
@@ -1533,6 +1553,9 @@ def audio_sku(name: str | None) -> str | None:
     body = re.sub(r"\([^)]*\)", " ", body)
     toks = [t for t in re.split(r"[\s,/]+", body) if t]
 
+    # MỚI: hãng nào dùng số trần làm mã dòng (Jabra) — không loại bỏ số trần cho hãng đó.
+    keep_bare_numbers = brand.lower() in _AUDIO_NUMERIC_MODEL_BRANDS
+
     # Thu thập model tokens theo chiến lược KHÔNG PHỤ THUỘC VỊ TRÍ:
     # Duyệt TOÀN BỘ token, bỏ qua brand/filler/màu — không cần tìm brand_idx.
     # Ưu điểm: bắt được "EH496W" trong "E-Dra EH496W Black" (brand = "E-Dra" không match token
@@ -1549,8 +1572,12 @@ def audio_sku(name: str | None) -> str | None:
         # Bỏ filler mô tả
         if tl in _AUDIO_FILLERS:
             continue
-        # Bỏ số trần (năm, giá, watt…) — mã model LUÔN có chữ lẫn số hoặc toàn chữ có nghĩa
+        # Bỏ số trần (năm, giá, watt…) — mã model LUÔN có chữ lẫn số hoặc toàn chữ có nghĩa.
+        # NGOẠI LỆ: với brand ở _AUDIO_NUMERIC_MODEL_BRANDS, số trần 2-5 chữ số CHÍNH LÀ mã dòng
+        # (Jabra "Biz 1100" vs "Biz 1500") — giữ lại thay vì loại bỏ (xem ghi chú BUG phía trên).
         if re.fullmatch(r"\d+(\.\d+)?[wghz]?", t, re.I):
+            if keep_bare_numbers and _AUDIO_MODEL_NUMBER.match(t):
+                model_toks.append(t)
             continue
         model_toks.append(t)
 
