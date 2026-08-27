@@ -1148,19 +1148,26 @@ def vga_sku(name: str | None) -> str | None:
     return "-".join(parts).upper().replace(" ", "-")
 
 
-# ── Mainboard / Bo mạch chủ (Tier A) ─────────────────────────────────────────────────────────
-# Tên đọc "Mainboard <BRAND> <CHIPSET+MODEL> <ĐỜI BỘ NHỚ>". Định danh = chipset+model board (B760M
-# DS3H, Z890 EAGLE) — KHÔNG phải chipset đơn lẻ: DS3H ≠ GAMING, EAGLE ≠ AORUS. SKU = BRAND-<CHIPSET>-
-# <MODEL>-<MEMGEN>, ví dụ GIGABYTE-B760M-DS3H-D4. MEMGEN: ddr4/d4->D4, ddr5/d5->D5, gen5->GEN5
-# (BIẾN THỂ THẬT: DS3H DDR4 ≠ DS3H GEN5). Bỏ từ rác (Mainboard/PRIME/TUF/Gaming/WIFI/PLUS/CSM/V2...)
-# khi chọn model, NHƯNG giữ model thật (DS3H, GAMING-là-dòng, EAGLE, HDV). "GAMING" vừa là rác vừa
-# đôi khi là dòng — nếu nó đứng NGAY SAU chipset và không có model khác thì GIỮ.
-_MB_CHIPSET = re.compile(r"\b([a-z]\d{3}[a-z]?)\b", re.I)  # B760M, Z890, A520M, X670E, H610
-# Dòng marketing DẪN ĐẦU (đứng TRƯỚC model, trước chipset thường) — bỏ khi nó mở đầu, nhưng nếu "GAMING"
-# là chính DÒNG board (Gigabyte B760M GAMING) thì nó đứng SAU chipset nên vẫn được giữ (xử lý riêng).
+_MB_CHIPSET = re.compile(r"\b([a-z]\d{2,4}[a-z]{0,2})\b", re.I)  # B760M, Z890, A520M, X670E, H610,
+                                                                   # B650EM, H81 (chipset Intel đời
+                                                                   # 8/9-series chỉ 2 chữ số: H81,
+                                                                   # H97, B85, Q87, Z87…)
+# HEDT/workstation AMD: 3 CHỮ trước số (không phải 1 chữ như B760M) — TRX40/TRX50/WRX80/WRX90
+# KHÔNG khớp _MB_CHIPSET. Thử pattern này TRƯỚC.
+_MB_HEDT_CHIPSET = re.compile(r"\b((?:trx|wrx)\d{2}[a-z]?)\b", re.I)
+
+# Một số listing dính TÊN DÒNG ngay sau mã chipset, KHÔNG qua khoảng trắng/gạch nối nào cả (vd
+# "B450AORUS-PRO" thay vì "B450 AORUS-PRO") — không có ranh giới \b giữa số và chữ kế tiếp nên
+# .search() cũng không tách được. Chèn khoảng trắng trước các từ dòng ĐÃ BIẾT khi đứng NGAY SAU
+# một dãy số. Danh sách có thể mở rộng khi gặp case mới.
+_MB_GLUED_LINE = re.compile(r"(?<=\d)(aorus|eagle|elite|vision)", re.I)
+
+# Tiền tố dòng THẬT (phân biệt sản phẩm, khác GA-/PRIME-/TUF- trong _MB_LEAD_FILLER vốn là chữ đệm
+# thuần): "EX-" (dòng doanh nghiệp Asus) và "WS-" (dòng Workstation) đứng trước CÙNG một chipset
+# vẫn là board KHÁC — giữ lại làm một phần định danh, đứng ngay trước chipset trong SKU.
+_MB_KEEP_PREFIX = {"ex", "ws"}
+
 _MB_LEAD_FILLER = {"mainboard", "bo", "mạch", "chủ", "main", "prime", "tuf"}
-# Từ NHIỄU THUẦN — luôn bỏ khỏi model (spec/kết nối/socket/kích thước/đời), KHÔNG dừng việc gom (vì
-# token định danh có thể đứng SAU chúng: "ELITE WIFI7 ICE" -> ICE nằm sau WIFI7). memgen xử lý riêng.
 _MB_NOISE = {
     "wifi", "wifi6", "wifi6e", "wifi7", "csm", "ax", "ai", "top", "bluetooth", "th", "rgb",
     "d4", "d5", "ddr4", "ddr5", "gen5", "gen4", "gen", "m.2",
@@ -1172,20 +1179,11 @@ _MB_MEMGEN = (
     ("D5", r"\bddr5\b|\bd5\b"),
     ("D4", r"\bddr4\b|\bd4\b"),
 )
-
-# Đời WiFi tích hợp trên mainboard — LÀ MỘT BIẾN THỂ SẢN PHẨM THẬT: "B760M DS3H GEN5" và
-# "B760M DS3H WIFI6E GEN5" là HAI main GIGABYTE khác nhau (bản sau có module WiFi tích hợp),
-# giá chênh nhau thật (bug thực tế phát hiện 2026-08). TRƯỚC KHI SỬA, "wifi"/"wifi6"/"wifi6e"/
-# "wifi7" nằm trong _MB_NOISE và bị BỎ HẲN khi gom model -> cả hai tên trên ra CÙNG SKU
-# "GIGABYTE-B760M-DS3H-GEN5", hai sản phẩm khác nhau ghi đè giá lên nhau trong catalog (cùng
-# lớp lỗi với vụ RAM/CPU trùng SKU). Tách riêng thành hậu tố, giống cách memgen (D4/D5/GEN5) và
-# N-pack (network_sku) đã làm — _MB_NOISE vẫn giữ "wifi*" để các token này KHÔNG lọt vào phần
-# model_parts ở giữa SKU, nhưng thông tin không còn bị mất hẳn nữa.
 _MB_WIFI = (
     ("WIFI7", r"\bwifi\s*7\b"),
-    ("WIFI6E", r"\bwifi\s*6e\b"),   # kiểm tra 6E TRƯỚC 6 để không bị pattern "wifi 6" nuốt nhầm
+    ("WIFI6E", r"\bwifi\s*6e\b"),
     ("WIFI6", r"\bwifi\s*6\b"),
-    ("WIFI", r"\bwifi\b"),          # WiFi không rõ đời — vẫn là biến thể thật so với bản không WiFi
+    ("WIFI", r"\bwifi\b"),
 )
 
 
@@ -1197,14 +1195,76 @@ def _mb_wifi_tag(body: str) -> str | None:
     return None
 
 
-def mainboard_sku(name: str | None) -> str | None:
-    """BRAND-<CHIPSET>-<MODEL>-<WIFI?>-<MEMGEN> cho bo mạch chủ, ví dụ "GIGABYTE-B760M-DS3H-D4"
-    hoặc "GIGABYTE-B760M-DS3H-WIFI6E-GEN5". None nếu không tìm được chipset.
+# Board KHÔNG có mã chipset dạng số — ASUS ROG dòng flagship đặt tên THUẦN MARKETING (Maximus/
+# Rampage/Crosshair/Strix/Zenith + số La Mã đời + biến thể Hero/Extreme/Formula/Code/Encore),
+# không hề có token chữ+số như B760M/X670E.
+_MB_ROG_LINE = {"maximus", "rampage", "crosshair", "strix", "zenith"}
 
-    Định danh = chipset + model board (KHÔNG chỉ chipset): DS3H ≠ GAMING, EAGLE ≠ AORUS. MEMGEN tách
-    DS3H DDR4 khỏi DS3H GEN5 (biến thể thật, giá khác). Đời WiFi tích hợp (WIFI/WIFI6/WIFI6E/WIFI7)
-    cũng được tách thành hậu tố riêng vì đó là biến thể thật (bản có WiFi ≠ bản không WiFi, giá
-    khác) — xem _mb_wifi_tag(). Khoá theo FULL MODEL, bỏ mã/ngoặc.
+
+def _mb_fallback(name: str, body: str, toks: list[str], brand: str, BRAND: str) -> str | None:
+    """Dự phòng khi KHÔNG tìm được mã chipset nào (cả _MB_HEDT_CHIPSET lẫn _MB_CHIPSET đều trượt)
+    — hai lớp board không theo quy ước chipset tiêu dùng:
+
+    1. ASUS ROG dòng flagship — khoá theo DÒNG + mọi token còn lại (số La Mã đời + biến thể), in
+       NHẤT QUÁN ở mọi cửa hàng nên vẫn khớp chéo được dù không có mã ngắn. WiFi (thường ghi trong
+       ngoặc "(WI-FI)" mà `body` đã bóc mất) được dò lại từ `name` GỐC để không mất biến thể
+       có/không WiFi.
+    2. Board máy chủ/doanh nghiệp mã dạng khối (Z11PA-U12, MW51-HP0, DBS1200SPSR, P10S-X…) — GIỮ
+       NGUYÊN VẸN từng token chữ+số (KHÔNG tách gạch nối) làm một khối định danh, rồi nối tối đa 2
+       khối dài nhất. Giữ nguyên token (không .split("-")) để không mất hậu tố ngắn phân biệt thật
+       — nếu tách "P11C-M" thành "P11C"+"M" rồi lọc theo độ dài, "P11C-M" và "P11C-X" (hai board
+       KHÁC NHAU thật) đều rơi về chỉ "P11C" và gộp làm một.
+    """
+    low = body.lower()
+    skip = {"mainboard", "bo", "mạch", "chủ", "main"} | set(brand.lower().split())
+
+    if any(re.search(rf"\b{w}\b", low) for w in _MB_ROG_LINE):
+        kept = [t.upper() for t in toks if t.lower() not in (skip | {"rog"})]
+        if not kept:
+            return None
+        wifi = "-WIFI" if re.search(r"wi-?fi", name, re.I) else ""
+        return f"{BRAND}-{'-'.join(kept)}{wifi}"
+
+    skip |= {"server", "workstation"}
+    cands: list[str] = []
+    for t in toks:
+        if t.lower() in skip:
+            continue
+        core = re.sub(r"[-/]", "", t)
+        if re.search(r"[a-z]", core, re.I) and re.search(r"\d", core) and len(core) >= 3:
+            up = t.upper()
+            if up not in cands:
+                cands.append(up)
+    return f"{BRAND}-{'-'.join(cands[:2])}" if cands else None
+
+
+def mainboard_sku(name: str | None) -> str | None:
+    """BRAND-<[EX|WS]?>-<CHIPSET>-<MODEL>-<WIFI?>-<MEMGEN> cho bo mạch chủ, ví dụ
+    "GIGABYTE-B760M-DS3H-D4" hoặc "ASUS-EX-B860M-V5".
+
+    BUG ĐÃ SỬA (2026-08, phát hiện từ log thật `discover_tnc --category mainboard`: ~60/672 sản
+    phẩm bị "SKIP (no SKU)"), gộp từ NHIỀU lỗi trong logic cũ:
+
+    1. `_MB_CHIPSET.match(t)` chỉ khớp khi chipset ở ĐẦU token — tiền tố dòng board dính liền qua
+       gạch nối (GA-B450M, EX-B860M-V5, WS-C246, PRIME-H510M-E, TUF-B365M-PLUS-GAMING) đẩy chipset
+       ra giữa token, không bao giờ tìm thấy. Đổi sang `.search()`.
+    2. Chipset HEDT của AMD (TRX40/TRX50/WRX80/WRX90) có 3 CHỮ trước số — thêm `_MB_HEDT_CHIPSET`
+       thử trước.
+    3. Một số chipset dính liền form-factor ngay sau số, KHÔNG qua gạch nối (B650EM, A620AM,
+       H310CM) — nới hậu tố chữ tùy chọn từ 1 lên tối đa 2 ký tự.
+    4. Chipset Intel đời cũ (8/9-series: H81, H97, B85, Q87, Z87…) chỉ có 2 CHỮ SỐ — nới `\d{3}`
+       thành `\d{2,4}`.
+    5. Gigabyte đôi khi dính TÊN DÒNG ngay sau số, không qua gạch/khoảng trắng nào cả
+       (B450AORUS-PRO) — chèn khoảng trắng cho các từ dòng ĐÃ BIẾT trước khi tokenize.
+    6. ASUS ROG dòng flagship không có mã chipset digit nào — thêm nhánh dự phòng trong
+       `_mb_fallback`.
+    7. Board máy chủ/doanh nghiệp (Z11PA-U12, MW51-HP0, DBS1200SPSR…) không theo quy ước chipset
+       tiêu dùng — thêm nhánh "mã khối" trong `_mb_fallback`.
+    8. Hậu tố hạng SAU chipset ("AORUS-PRO", "AORUS-ELITE") trước đây chỉ lấy ĐOẠN ĐẦU trước dấu
+       gạch khi gom model — "AORUS-PRO" và "AORUS-ELITE" (hai board GA-X570 THẬT KHÁC NHAU) sẽ gộp
+       cùng "AORUS" nếu không sửa; giờ tách hết mọi đoạn, không chỉ đoạn đầu.
+    9. Cụm quảng cáo cuối tên kiểu " - Chính hãng giá rẻ" (TNC) từng bị nuốt làm "model" — cắt bỏ
+       mọi thứ sau " - " (gạch nối CÓ khoảng trắng — mã model thật không bao giờ viết vậy).
     """
     from .brand import brand_of
 
@@ -1216,96 +1276,66 @@ def mainboard_sku(name: str | None) -> str | None:
     BRAND = brand.upper()
 
     body = re.sub(r"\([^)]*\)", " ", name)
+    body = re.split(r"\s-\s", body, maxsplit=1)[0]  # cắt cụm quảng cáo " - Chính hãng giá rẻ"
+    body = _MB_GLUED_LINE.sub(r" \1", body)
     toks = [t for t in re.split(r"[\s,/]+", body) if t]
+    if not toks:
+        return None
 
-    # Tìm chipset (B760M, Z890, A520M-K tách ra "a520m-k" -> cần bắt phần đầu). Chipset là token khớp
-    # <chữ><3 số><chữ?> — có thể dính model bằng "-" (A520M-K, B760M-E, B760M-HDV) hoặc rời.
     ci = None
     chipset = None
+    match_obj = None
     for i, t in enumerate(toks):
-        m = _MB_CHIPSET.match(t)  # match ở ĐẦU token: "B760M", "B760M-E", "A520M-K"
+        m = _MB_HEDT_CHIPSET.search(t) or _MB_CHIPSET.search(t)
         if m:
-            ci = i
-            chipset = m.group(1).upper()
+            ci, chipset, match_obj = i, m.group(1).upper(), m
             break
+
     if chipset is None:
-        return None
+        return _mb_fallback(name, body, toks, brand, BRAND)
 
     memgen = next((tag for tag, pat in _MB_MEMGEN if re.search(pat, body, re.I)), None)
     wifi_tag = _mb_wifi_tag(body)
 
-    # Gom MODEL = MỌI token định danh SAU chipset (dòng + tier + hậu tố: AORUS ELITE, AORUS PRO ICE,
-    # GAMING X, DS3H), GIỮ nguyên thứ tự. Bỏ token NHIỄU thuần (_MB_NOISE: wifi/socket/đời…) NHƯNG
-    # KHÔNG dừng ở đó — token định danh có thể nằm sau ("ELITE WIFI7 ICE" -> giữ ELITE và ICE). Bỏ số
-    # trần và token = memgen. Lấy tối đa 3 phần model (đủ tách mọi biến thể AORUS mà không quá dài).
-    model_parts: list[str] = []
-    ctok = toks[ci]
-    if "-" in ctok:  # chipset dính model: "B760M-HDV/M.2" -> HDV, "A520M-K" -> K
-        tail = re.split(r"[-/]", ctok.split("-", 1)[1])[0]
-        if tail and tail.lower() not in _MB_LEAD_FILLER and tail.lower() not in _MB_NOISE:
-            model_parts.append(tail.upper())
+    # Tiền tố dòng THẬT (EX-/WS-) đứng trước chipset — quét mọi đoạn (tách trên "-") của các token
+    # ĐỨNG TRƯỚC ci, CỘNG phần đứng trước điểm khớp NGAY TRONG chính token chứa chipset.
+    prefix_markers: list[str] = []
+    for seg in [s for tk in toks[:ci] for s in re.split(r"[-/]", tk)] + re.split(
+        r"[-/]", toks[ci][: match_obj.start()]
+    ):
+        if seg and seg.lower() in _MB_KEEP_PREFIX:
+            prefix_markers.append(seg.upper())
 
-    for t in toks[ci + 1:]:
-        head = re.split(r"[-/]", t)[0]
-        hl = head.lower()
-        if not head or hl in _MB_NOISE:
-            continue                                # nhiễu thuần — bỏ, KHÔNG dừng
-        if not model_parts and hl in _MB_LEAD_FILLER:
-            continue                                # dòng marketing dẫn đầu trước khi có model
-        if re.fullmatch(r"\d+", head):              # số trần (đời/bus) — bỏ
+    # MODEL = mọi đoạn định danh SAU chipset — cả phần còn lại của CHÍNH token chứa chipset (vd
+    # "-V5" trong "EX-B860M-V5") LẪN các token đứng sau, tách TIẾP trên "-"/"/" (vd "AORUS-PRO"
+    # -> "AORUS","PRO" — nếu chỉ lấy đoạn đầu thì "AORUS-PRO" và "AORUS-ELITE" gộp một SKU).
+    raw_after = [s for s in re.split(r"[-/]", toks[ci][match_obj.end() :]) if s]
+    for t in toks[ci + 1 :]:
+        raw_after.extend(s for s in re.split(r"[-/]", t) if s)
+
+    model_parts: list[str] = []
+    for seg in raw_after:
+        sl = seg.lower()
+        if sl in _MB_NOISE:
             continue
-        if any(re.search(pat, head, re.I) for _, pat in _MB_MEMGEN):  # token chính là memgen — bỏ
+        if not model_parts and sl in _MB_LEAD_FILLER:
             continue
-        model_parts.append(head.upper())
+        if re.fullmatch(r"\d+", seg):
+            continue
+        if any(re.search(pat, seg, re.I) for _, pat in _MB_MEMGEN):
+            continue
+        model_parts.append(seg.upper())
         if len(model_parts) >= 3:
             break
 
-    parts = [BRAND, chipset, *model_parts]
+    parts = [BRAND, *prefix_markers, chipset, *model_parts]
     if wifi_tag:
         parts.append(wifi_tag)
     if memgen:
         parts.append(memgen)
     return "-".join(parts).upper().replace(" ", "-")
 
-
 # ── Phần mềm bản quyền (Windows/Office, diệt virus, đồ họa...) ──────────────────────────────
-# Tên đọc "<Phần mềm/Bản quyền> <BRAND> <SẢN PHẨM> <PHIÊN BẢN/EDITION> <SỐ THIẾT BỊ> <THỜI HẠN>",
-# ví dụ "Phần mềm diệt virus Kaspersky Total Security 3 Thiết Bị 1 Năm", "Microsoft Office Home
-# and Student 2024", "Windows 11 Pro FPP".
-#
-# KHÔNG có mã part như phần cứng — định danh là chính TÊN SẢN PHẨM còn lại sau khi bỏ filler, cộng
-# với SỐ LƯỢNG (PC/User/Server)/THỜI HẠN tách riêng thành hậu tố. Số lượng + thời hạn LÀ một phần
-# định danh thật: Kaspersky "3 Thiết Bị / 1 Năm" và "5 Thiết Bị / 1 Năm" và "3 Thiết Bị / 2 Năm" là
-# BA gói khác nhau, giá khác nhau thật — gộp chung sẽ ghi đè nhau trong catalog và so giá sai (cùng
-# lớp lỗi với vụ RAM/CPU trùng SKU).
-#
-# BUG ĐÃ SỬA (2026-08, phát hiện từ log thật `discover_tnc --category software --dry`):
-#
-# 1. "diệt"/"virus" KHÔNG nằm trong filler (_SW_SPEC cũ) — nhưng đây là mô tả CHUNG của cả category
-#    (mọi sản phẩm software đều có "diệt virus" hoặc không), không phân biệt SẢN PHẨM nào với sản
-#    phẩm nào. Vì core[:4] giới hạn CHỈ 4 token định danh, hai từ chung chung này chiếm mất 2/4 suất,
-#    đẩy token PHÂN BIỆT THẬT (ví dụ "1Server") ra ngoài giới hạn → bị cắt mất.
-#    Ví dụ thật: "Kaspersky KSOS 1Server + 5PCS" và "... + 10PCS" — sau lọc filler, core =
-#    [DIỆT, VIRUS, KSOS, 1SERVER, (5PCS bị cắt)] → cả hai gói (giá khác nhau: 3.190.000đ vs
-#    3.690.000đ) RA CÙNG MỘT SKU "KASPERSKY-DIỆT-VIRUS-KSOS-1SERVER", một trong hai bị ghi đè mất.
-#
-# 2. _SW_DEVICES cũ dùng \bpc\b (ranh giới từ NGAY SAU "pc") nên KHÔNG khớp "5PCS"/"10PCS" (chữ "S"
-#    liền sau phá ranh giới từ) — số lượng máy trong "1Server + 5PCS" chưa từng được tách ra làm hậu
-#    tố như thiết kế ban đầu, nó chỉ tình cờ còn sót trong core rồi bị bug #1 cắt mất.
-#
-# 3. fpp/oem/retail/box/tem/hologram từng bị coi là FILLER (bỏ đi) trong _SW_SPEC cũ — nhưng đây là
-#    hình thức ĐÓNG GÓI/GIẤY PHÉP THẬT, ảnh hưởng giá thật (OEM dán máy rẻ hơn FPP bán lẻ). Ví dụ
-#    thật: "Office Home and Business 2021" (OEM) và "FPP Office Home and Business 2021" (bán lẻ) bị
-#    gộp chung SKU "MICROSOFT-OFFICE-HOME-AND-BUSINESS" dù giá và hình thức bán khác nhau.
-#
-# Sửa: (a) thêm "diệt/virus/và/and" — các từ MÔ TẢ CHUNG không phân biệt sản phẩm — vào filler;
-#      (b) BỎ fpp/oem/retail/esd/box/tem/hologram khỏi filler (giữ lại làm token định danh thật);
-#      (c) đổi _SW_DEVICES → _SW_QTY: khớp CẢ số nhiều ("pcs", "users", "devices", "servers"/"svr"),
-#          bắt TẤT CẢ các cụm số lượng trong tên (không chỉ cụm đầu tiên — "1Server + 5PCS" có 2
-#          cụm, cả hai đều là định danh thật của gói combo server+client);
-#      (d) nâng trần core[:4] → core[:6] — tên tiếng Việt bị tách nhiều âm tiết hơn tiếng Anh nên
-#          cần nhiều "suất" token hơn để không cắt mất phần định danh thật (năm phát hành, ENG,
-#          FPP/OEM...).
 _SW_SPEC = re.compile(
     r"^(phần|phan|mềm|mem|bản|ban|quyền|quyen|key|license|cho|digital|download|new|"
     r"chính|chinh|hãng|hang|vĩnh|vinh|viễn|vien|trọn|tron|đời|doi|"
