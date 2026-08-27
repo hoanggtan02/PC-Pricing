@@ -1,1 +1,41 @@
 competitor	sku	url	reason
+Phong Vũ	ASUS-H610M-K-D4	https://phongvu.vn/bo-mach-chinh-mainboard-asus-prime-h610m-k-d4-csm-90mb1a10-m0uayc--s240100848	[HẠ TẦNG/MẠNG] Page.goto: net::ERR_TUNNEL_CONNECTION_FAILED at https://phongvu.vn/bo-mach-chinh
+FPT Shop	ASROCK-B550M-HDV	https://fptshop.com.vn/linh-kien/mainboard-asrock-b550m-hdv	[HẠ TẦNG/MẠNG] Page.goto: net::ERR_TUNNEL_CONNECTION_FAILED at https://fptshop.com.vn/linh-kien
+Hà Nội Computer	ASROCK-H510M-HDV-SE	https://hacom.vn/mainboard-asrock-h510m-hdv-m.2-se	[PARSE] Server disconnected
+An Phát PC	ASUS-B550M-PLUS-II	https://www.anphatpc.com.vn/mainboard-asus-tuf-gaming-b550m-plus-wifi-ii.html	[PARSE] Server disconnected
+CellphoneS	ASUS-B550M-PLUS	https://cellphones.com.vn/mainboard-asus-tuf-gaming-b550m-plus.html	[PARSE] Server disconnected
+GearVN	ASUS-X870-A-GAMING	https://gearvn.com/products/bo-mach-chu-asus-rog-strix-x870-a-gaming-wifi-ddr5	[PARSE] Server disconnected
+Hà Nội Computer	ASROCK-H610M-HVS	https://hacom.vn/mainboard-asrock-h610m-hvs-m.2-r2.0	[PARSE] Server disconnected
+GearVN	ASUS-X870-F-GAMING	https://gearvn.com/products/bo-mach-chu-asus-rog-strix-x870-f-gaming-wifi-ddr5	[HẠ TẦNG/MẠNG] Page.goto: Timeout 30000ms exceeded.
+Hà Nội Computer	ASROCK-X870-PRO-RS	https://hacom.vn/mainboard-asrock-x870-pro-rs-wifi	[HẠ TẦNG/MẠNG] Page.goto: Timeout 30000ms exceeded.
+FPT Shop	ASUS-Z790-P-D4	https://fptshop.com.vn/linh-kien/mainboard-asus-prime-z790-p-wifi-d4-csm	[PARSE] [WinError 10060] A connection attempt failed because the connected party did not
+Thành Nhân	ASROCK-B550-PRO4	https://www.tnc.com.vn/mainboard-asrock-b550-pro4.html	[PARSE] [WinError 10060] A connection attempt failed because the connected party did not
+GearVN	ASUS-X870-PLUS	https://gearvn.com/products/bo-mach-chu-asus-tuf-gaming-x870-plus-wifi-ddr5	[HẠ TẦNG/MẠNG] Page.goto: Timeout 30000ms exceeded.
+CellphoneS	ASUS-B560-G-GAMING	https://cellphones.com.vn/mainboard-asus-rog-strix-b560-g-gaming-wifi.html	[PARSE] [WinError 10060] A connection attempt failed because the connected party did not
+Thành Nhân	ASROCK-B550-TAICHI	https://www.tnc.com.vn/mainboard-asrock-b550-taichi.html	[PARSE] [WinError 10054] An existing connection was forcibly closed by the remote host
+FPT Shop	GIGABYTE-B760-GAMING-X-D4	https://fptshop.com.vn/linh-kien/mainboard-gigabyte-b760-gaming-x-ax-ddr4	[PARSE] {'message': 'JWT issued at future', 'code': 'PGRST303', 'hint': None, 'details':
+Thành Nhân	ASUS-A320M-K	https://www.tnc.com.vn/mainboard-asus-prime-a320m-k.html	TNC ngừng kinh doanh sản phẩm này
+Thành Nhân	ASUS-B560-PLUS-WIFI	https://www.tnc.com.vn/mainboard-asus-tuf-gaming-b560-plus-wifi.html	TNC ngừng kinh doanh sản phẩm này
+Thành Nhân	ASUS-Z790-HERO-BTF	https://www.tnc.com.vn/mainboard-asus-rog-maximus-z790-hero-btf.html	[PARSE] Server disconnected
+Thành Nhân	ASUS-Z790-I-GAMING	https://www.tnc.com.vn/mainboard-asus-rog-strix-z790-i-gaming-wifi.html	[PARSE] Server disconnected
+Thành Nhân	ASUS-Z790-I-GAMING-WIFI	https://www.tnc.com.vn/mainboard-asus-rog-strix-z790-i-gaming-wifi.html	[PARSE] Server disconnected
+Thành Nhân	ASUS-Z790-P	https://www.tnc.com.vn/mainboard-asus-prime-z790-p-csm.html	[PARSE] Server disconnected
+Thành Nhân	GIGABYTE-B560M-GAMING-HD	https://www.tnc.com.vn/mainboard-gigabyte-b560m-gaming-hd.html	[PARSE] Server disconnected
+Thành Nhân	GIGABYTE-B560M-DS3H-AC	https://www.tnc.com.vn/mainboard-gigabyte-b560m-ds3h-ac.html	[PARSE] Server disconnected
+Thành Nhân	GIGABYTE-B560M-H	https://www.tnc.com.vn/mainboard-gigabyte-b560m-h.html	[PARSE] Server disconnected
+Thành Nhân	GIGABYTE-B650EM-FORCE-WIFI6E	https://www.tnc.com.vn/mainboard-gigabyte-b650em-force-wifi6e.html	[PARSE] Server disconnected
+Thành Nhân	GIGABYTE-B650M-AORUS-ELITE	https://www.tnc.com.vn/mainboard-gigabyte-b650m-aorus-elite.html	[PARSE] Server disconnected
+Thành Nhân	GIGABYTE-B650M-D2HP	https://www.tnc.com.vn/mainboard-gigabyte-b650m-d2hp.html	[PARSE] [WinError 10060] A connection attempt failed because the connected party did not
+Thành Nhân	GIGABYTE-H110M-S2	https://www.tnc.com.vn/mainboard-gigabyte-ga-h110m-s2.html	TNC ngừng kinh doanh sản phẩm này
+Thành Nhân	GIGABYTE-H81M-DS2	https://www.tnc.com.vn/gigabyte-h81m-ds2.html	TNC ngừng kinh doanh sản phẩm này
+Thành Nhân	GIGABYTE-H81M-H	https://www.tnc.com.vn/mainboard-gigabyte-h81m-h-m.2.html	TNC ngừng kinh doanh sản phẩm này
+Thành Nhân	GIGABYTE-X150M-PLUS-WS	https://www.tnc.com.vn/mainboard-gigabyte-ga-x150m-plus-ws.html	TNC ngừng kinh doanh sản phẩm này
+Thành Nhân	GIGABYTE-X570-AORUS-ELITE	https://www.tnc.com.vn/mainboard-gigabyte-ga-x570-aorus-elite.html	TNC ngừng kinh doanh sản phẩm này
+Thành Nhân	GIGABYTE-X570-AORUS-PRO	https://www.tnc.com.vn/mainboard-gigabyte-ga-x570-aorus-pro.html	TNC ngừng kinh doanh sản phẩm này
+Thành Nhân	GIGABYTE-Z790-AORUS-ELITE-W	https://www.tnc.com.vn/mainboard-gigbyte-z790-aorus-elite-ax-w.html	TNC ngừng kinh doanh sản phẩm này
+Thành Nhân	MSI-Z390-GAMING-PRO-CARBON	https://www.tnc.com.vn/mainboard-msi-mpg-z390-gaming-pro-carbon-ac.html	[PARSE] Server disconnected
+Thành Nhân	MSI-Z790-A-D4	https://www.tnc.com.vn/mainboard-msi-pro-z790-a-wifi-ddr4.html	[PARSE] Server disconnected
+Thành Nhân	MSI-Z790-A-WIFI-D4	https://www.tnc.com.vn/mainboard-msi-pro-z790-a-wifi-ddr4.html	[PARSE] Server disconnected
+Thành Nhân	MSI-Z790-EDGE-TI-MAX	https://www.tnc.com.vn/mainboard-msi-mpg-z790-edge-ti-max-wifi.html	[PARSE] Server disconnected
+Thành Nhân	MSI-Z790-ACE-MAX	https://www.tnc.com.vn/mainboard-msi-meg-z790-ace-max.html	[PARSE] Server disconnected
+Thành Nhân	MSI-Z790-EDGE-TI-MAX-WIFI	https://www.tnc.com.vn/mainboard-msi-mpg-z790-edge-ti-max-wifi.html	[PARSE] [WinError 10054] An existing connection was forcibly closed by the remote host

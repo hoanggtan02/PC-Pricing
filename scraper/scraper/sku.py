@@ -865,7 +865,7 @@ def cpu_sku(name: str | None) -> str | None:
             i = toks.index("ultra")
             tier = toks[i + 1] if i + 1 < len(toks) else ""          # 5 / 7 / 9
             model = next((t for t in toks[i + 2:] if _CPU_MODEL.match(t)), "")
-            # "Plus" là BIẾN THỂ THẬT của Intel (Arrow Lake Refresh: 250K Plus ≠ 250K) — giữ lại để
+            # "Plus" là BIẾN THỂ THẬT của Intel (Arrow Lake Refresh) — giữ lại để
             # sau này Intel ra bản không-Plus cùng số thì hai SKU vẫn tách nhau.
             plus = "-PLUS" if "plus" in toks[i:] else ""
             return f"INTEL-ULTRA-{tier}-{model}{plus}".upper().rstrip("-") if model else None
@@ -1457,6 +1457,10 @@ _AUDIO_COLORS = {
     "piano", "cream", "lavender", "teal", "aqua", "ice", "ocean", "titan",
     # tiếng Việt
     "đen", "trắng", "đỏ", "xanh", "hồng", "tím", "xám", "bạc", "vàng",
+    # tổ hợp màu 2 từ tiếng Việt (biển "xanh dương"/"xanh lá"/"xanh biển"/"xanh ngọc" hay gặp trên
+    # TNC/EDIFIER) — token thứ hai của cụm cũng phải bị loại, nếu không nó lọt vào model_toks và
+    # (hiếm khi) làm sai lệch phần fallback không-có-digit ở cuối audio_sku().
+    "dương", "duong", "lá", "la", "biển", "bien", "ngọc", "ngoc", "nhạt", "nhat", "đậm", "dam",
 }
 # CHỈ loại từ KHÔNG bao giờ là một phần model: mô tả kết nối/đặc tính chung.
 # ĐÃ XÓA: "pro", "plus", "max", "mini", "ultra", "ii", "iii", "se" — các từ này
@@ -1476,12 +1480,22 @@ _AUDIO_FILLERS = {
 }
 # Loại phụ kiện âm thanh — THỨ TỰ QUAN TRỌNG: pattern DÀI hơn phải đứng TRƯỚC pattern ngắn
 # hơn để regex alternation ưu tiên match đúng (vd "loa bluetooth di dong" phải match trước "loa bluetooth").
+# GHI CHÚ: các biến thể có dấu ("kéo", "trợ giảng", "hội nghị"...) được thêm SONG SONG với bản
+# không dấu — bản gốc chỉ có "keo"/"tro giang"/"hoi nghi" (không dấu) nên KHÔNG khớp được với tên
+# sản phẩm thật (TNC luôn ghi CÓ dấu, ví dụ "Loa kéo mini ..."). Thiếu các biến thể có dấu khiến
+# toàn bộ nhánh "loa\s*(?:...)" không bao giờ khớp, rơi xuống "loa" trơn — hậu quả: mô tả loại vẫn
+# CHỈ bị cắt một phần ("Loa " thay vì "Loa kéo "), để lại rác ("kéo", "trợ giảng"...) lẫn trong
+# phần thân dùng để suy ra model. Điều này không tự nó gây None (không loại bỏ được model thật),
+# nhưng làm SKU kém sạch hơn cần thiết — sửa cho nhất quán với brand.py (vốn đã chấp nhận cả hai
+# dạng có dấu/không dấu ở name_prefixes).
 _AUDIO_PREFIX = re.compile(
     r"^\s*(?:"
-    r"tai\s*nghe\s*(?:khong\s*day|không\s*dây|bluetooth|wireless|gaming|choang\s*dau|nhet\s*tai)?|"
+    r"tai\s*nghe\s*(?:khong\s*day|không\s*dây|bluetooth|wireless|gaming|choang\s*dau|choàng\s*đầu|"
+    r"nhet\s*tai|nhét\s*tai)?|"
     r"tainghe|headphone|headset|earphone|"
-    r"loa\s*(?:tro\s*giang\s*di\s*dong|bluetooth\s*di\s*dong|hoi\s*nghi|may\s*tinh|"
-    r"di\s*dong|keo|bluetooth|tro\s*giang)|"
+    r"loa\s*(?:tro\s*giang\s*di\s*dong|trợ\s*giảng\s*di\s*động|bluetooth\s*di\s*dong|"
+    r"hoi\s*nghi|hội\s*nghị|may\s*tinh|máy\s*tính|"
+    r"di\s*dong|di\s*động|keo|kéo|bluetooth|tro\s*giang|trợ\s*giảng)|"
     r"loa|speaker|micro(?:phone)?|"
     r"form\s*tai\s*nghe|form"
     r")\s*",
@@ -1558,26 +1572,52 @@ def audio_sku(name: str | None) -> str | None:
 
 # ── Camera an ninh ──────────────────────────────────────────────────────────────────────────────
 # Tên đọc "<loại> <mô tả> <BRAND> <MODEL> (<spec>)", ví dụ "Camera IP WiFi EZVIZ H6C 3K 5MP",
-# "Camera Tenda CP6". Định danh = BRAND + MODEL. Camera model thường NGẮN (H6C, CP6, C6N) nên
-# network_sku (yêu cầu token ≥4) bỏ sót. Fallback: lấy token chữ+số ngắn nhất ≥2 ký tự.
+# "Camera Tenda CP6". Định danh = BRAND + MODEL.
+#
+# BUG ĐÃ SỬA (2026-08, phát hiện từ log thật `discover_tnc --category camera`: hàng loạt SKIP,
+# gần như 100% các listing TP-Link Tapo/VIGI, Dahua, Imou):
+#
+# 1. `brand_toks = set(brand.lower().replace("-", " ").split())` KHÔNG chứa dạng CÓ GẠCH NỐI của
+#    brand — với "TP-Link" nó chỉ tạo {"tp", "link"}, KHÔNG có "tp-link". Token thật trong tên vẫn
+#    là "TP-Link" (một khối, vì tách trên khoảng trắng/dấu phẩy không tách "-"), nên
+#    `t.lower() in brand_toks` không bao giờ True cho brand có gạch nối → brand_idx luôn None →
+#    hàm trả về None cho MỌI camera TP-Link/D-Link/E-Dra... dù brand_of() đã nhận diện đúng brand.
+#    Đây là nguyên nhân của tuyệt đại đa số SKIP quan sát được (TP-Link chiếm phần lớn danh mục
+#    camera). Sửa bằng bộ 3 dạng brand_toks giống audio_sku() (có gạch/không gạch/từng từ).
+# 2. Vòng lặp thu thập model_toks dùng `break` ngay khi gặp token spec/màu/filler ĐẦU TIÊN sau
+#    brand — nhưng spec (vd "4MP", "Wifi") thường đứng XEN GIỮA brand và mã model thật trong tên
+#    gốc tiếng Việt (ví dụ "Dahua 4MP DH-IPC-HDBW1439E1-A-IL": "4MP" đứng ngay sau brand, TRƯỚC mã
+#    model) — `break` dừng vòng lặp ngay tại "4MP", không bao giờ chạm tới mã model phía sau, nên
+#    model_toks rỗng → trả None dù mã model có mặt trong tên. Sửa: dùng `continue` (bỏ qua token
+#    spec) thay vì `break`, để quét hết toàn bộ phần còn lại của tên, giống audio_sku().
+# 3. Brand có thể lặp lại NHIỀU LẦN trong tên (vd "Camera Imou Wifi 4G IMOU 2MP S21FTP" — "Imou"
+#    xuất hiện cả ở đầu và giữa tên, kiểu ghi trùng lặp của một số nguồn dữ liệu). Token brand lặp
+#    lại đó trước đây bị coi là một phần "model" nếu nó đứng sau brand_idx — nay được lọc ở MỌI vị
+#    trí (không chỉcủa brand_idx) nhờ kiểm tra brand_toks trong chính vòng lặp model_toks.
 _CAMERA_PREFIX = re.compile(
     r"^\s*(?:camera"
     r"(?:\s+ip)?"
     r"(?:\s+wi[\- ]?fi(?:\s+(?:trong\s+nh(?:a|à)|ngo(?:ai|ài)\s+tr(?:oi|ời)))?)?"
     r"(?:\s+quay\s*qu(?:e|ê)t(?:\s+th(?:o|ô)ng\s*minh)?)?"
+    r"|quan\s*s[aá]t"
     r")\s*",
     re.I,
 )
 _CAMERA_SPEC = re.compile(
-    r"^(ip|wifi|wlan|ngoai|ngoài|trong|quay|quet|quẹt|thông|minh|thong|3k|2k|4k|5mp|4mp|3mp|"
-    r"2mp|1mp|mp|led|ir|night|color|pan|tilt|zoom|sd|poe|onvif|cloud|storage|"
-    r"inden|outdoor|indoor|floodlight|spotlight|doorbell|chime)$",
+    r"^(ip|wifi|wi-fi|wlan|ngoai|ngoài|trong|nha|nhà|troi|trời|quan|sat|sát|quay|quet|quét|quẹt|"
+    r"thông|minh|thong|ai|360|độ|do|"
+    r"[1-9]k|\d{1,2}mp|mp|led|ir|night|color|full|full-color|pan|tilt|zoom|sd|poe|onvif|cloud|"
+    r"storage|an|ninh|dùng|dung|pin|giám|giam|trẻ|tre|em|tích|tich|hợp|hop|đèn|den|pha|"
+    r"1080p|hd|ống|ong|kính|kinh|"
+    r"inden|outdoor|indoor|floodlight|spotlight|doorbell|chime|ngo)$",
     re.I,
 )
 
 
 def camera_sku(name: str | None) -> str | None:
-    """BRAND-MODEL cho camera an ninh, ví dụ "EZVIZ-H6C", "TENDA-CP6"."""
+    """BRAND-MODEL cho camera an ninh, ví dụ "TP-LINK-C232", "DAHUA-DH-IPC-HDBW1439E1-A-IL",
+    "EZVIZ-H6C". Xem ghi chú "BUG ĐÃ SỬA" ở trên cho lý do các thay đổi so với bản trước.
+    """
     from .brand import brand_of
 
     if not name:
@@ -1592,24 +1632,34 @@ def camera_sku(name: str | None) -> str | None:
     if brand.lower() == "other":
         return None
     BRAND = brand.upper()
-    brand_toks = set(brand.lower().replace("-", " ").split())
+    # Bộ 3 dạng brand_toks (có gạch/không gạch/từng từ) — cùng kỹ thuật với audio_sku(), sửa lỗi
+    # #1 ở trên (brand có gạch nối như "TP-Link" trước đây không bao giờ khớp).
+    brand_toks: set[str] = {
+        brand.lower(),
+        *brand.lower().replace("-", " ").split(),
+        brand.lower().replace("-", ""),
+    }
     toks = [t for t in re.split(r"[\s,]+", body) if t]
 
     brand_idx = None
     for i, t in enumerate(toks):
-        if t.lower() in brand_toks:
+        if t.lower().strip("-") in brand_toks:
             brand_idx = i
             break
     if brand_idx is None:
         return None
 
+    # Quét TOÀN BỘ phần còn lại sau brand (không dừng sớm) — sửa lỗi #2/#3 ở trên: bỏ qua
+    # (continue) token spec/màu/filler/brand-lặp-lại thay vì break ngay khi gặp token đầu tiên.
     model_toks: list[str] = []
     for t in toks[brand_idx + 1:]:
-        tl = t.lower()
+        tl = t.lower().strip("-")
+        if tl in brand_toks:
+            continue
         if tl in _AUDIO_COLORS or tl in _AUDIO_FILLERS or _CAMERA_SPEC.match(t):
-            break
+            continue
         if re.fullmatch(r"\d+", t):
-            break
+            continue
         model_toks.append(t)
 
     if not model_toks:
