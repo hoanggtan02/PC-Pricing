@@ -1173,13 +1173,38 @@ _MB_MEMGEN = (
     ("D4", r"\bddr4\b|\bd4\b"),
 )
 
+# Đời WiFi tích hợp trên mainboard — LÀ MỘT BIẾN THỂ SẢN PHẨM THẬT: "B760M DS3H GEN5" và
+# "B760M DS3H WIFI6E GEN5" là HAI main GIGABYTE khác nhau (bản sau có module WiFi tích hợp),
+# giá chênh nhau thật (bug thực tế phát hiện 2026-08). TRƯỚC KHI SỬA, "wifi"/"wifi6"/"wifi6e"/
+# "wifi7" nằm trong _MB_NOISE và bị BỎ HẲN khi gom model -> cả hai tên trên ra CÙNG SKU
+# "GIGABYTE-B760M-DS3H-GEN5", hai sản phẩm khác nhau ghi đè giá lên nhau trong catalog (cùng
+# lớp lỗi với vụ RAM/CPU trùng SKU). Tách riêng thành hậu tố, giống cách memgen (D4/D5/GEN5) và
+# N-pack (network_sku) đã làm — _MB_NOISE vẫn giữ "wifi*" để các token này KHÔNG lọt vào phần
+# model_parts ở giữa SKU, nhưng thông tin không còn bị mất hẳn nữa.
+_MB_WIFI = (
+    ("WIFI7", r"\bwifi\s*7\b"),
+    ("WIFI6E", r"\bwifi\s*6e\b"),   # kiểm tra 6E TRƯỚC 6 để không bị pattern "wifi 6" nuốt nhầm
+    ("WIFI6", r"\bwifi\s*6\b"),
+    ("WIFI", r"\bwifi\b"),          # WiFi không rõ đời — vẫn là biến thể thật so với bản không WiFi
+)
+
+
+def _mb_wifi_tag(body: str) -> str | None:
+    """Hậu tố đời WiFi tích hợp (WIFI7/WIFI6E/WIFI6/WIFI), hoặc None nếu tên không nhắc đến WiFi."""
+    for tag, pat in _MB_WIFI:
+        if re.search(pat, body, re.I):
+            return tag
+    return None
+
 
 def mainboard_sku(name: str | None) -> str | None:
-    """BRAND-<CHIPSET>-<MODEL>-<MEMGEN> cho bo mạch chủ, ví dụ "GIGABYTE-B760M-DS3H-D4". None nếu
-    không tìm được chipset.
+    """BRAND-<CHIPSET>-<MODEL>-<WIFI?>-<MEMGEN> cho bo mạch chủ, ví dụ "GIGABYTE-B760M-DS3H-D4"
+    hoặc "GIGABYTE-B760M-DS3H-WIFI6E-GEN5". None nếu không tìm được chipset.
 
     Định danh = chipset + model board (KHÔNG chỉ chipset): DS3H ≠ GAMING, EAGLE ≠ AORUS. MEMGEN tách
-    DS3H DDR4 khỏi DS3H GEN5 (biến thể thật, giá khác). Khoá theo FULL MODEL, bỏ mã/ngoặc.
+    DS3H DDR4 khỏi DS3H GEN5 (biến thể thật, giá khác). Đời WiFi tích hợp (WIFI/WIFI6/WIFI6E/WIFI7)
+    cũng được tách thành hậu tố riêng vì đó là biến thể thật (bản có WiFi ≠ bản không WiFi, giá
+    khác) — xem _mb_wifi_tag(). Khoá theo FULL MODEL, bỏ mã/ngoặc.
     """
     from .brand import brand_of
 
@@ -1207,6 +1232,7 @@ def mainboard_sku(name: str | None) -> str | None:
         return None
 
     memgen = next((tag for tag, pat in _MB_MEMGEN if re.search(pat, body, re.I)), None)
+    wifi_tag = _mb_wifi_tag(body)
 
     # Gom MODEL = MỌI token định danh SAU chipset (dòng + tier + hậu tố: AORUS ELITE, AORUS PRO ICE,
     # GAMING X, DS3H), GIỮ nguyên thứ tự. Bỏ token NHIỄU thuần (_MB_NOISE: wifi/socket/đời…) NHƯNG
@@ -1235,6 +1261,8 @@ def mainboard_sku(name: str | None) -> str | None:
             break
 
     parts = [BRAND, chipset, *model_parts]
+    if wifi_tag:
+        parts.append(wifi_tag)
     if memgen:
         parts.append(memgen)
     return "-".join(parts).upper().replace(" ", "-")
