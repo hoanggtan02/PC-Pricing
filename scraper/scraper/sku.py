@@ -1239,33 +1239,7 @@ def _mb_fallback(name: str, body: str, toks: list[str], brand: str, BRAND: str) 
 
 
 def mainboard_sku(name: str | None) -> str | None:
-    """BRAND-<[EX|WS]?>-<CHIPSET>-<MODEL>-<WIFI?>-<MEMGEN> cho bo mạch chủ, ví dụ
-    "GIGABYTE-B760M-DS3H-D4" hoặc "ASUS-EX-B860M-V5".
-
-    BUG ĐÃ SỬA (2026-08, phát hiện từ log thật `discover_tnc --category mainboard`: ~60/672 sản
-    phẩm bị "SKIP (no SKU)"), gộp từ NHIỀU lỗi trong logic cũ:
-
-    1. `_MB_CHIPSET.match(t)` chỉ khớp khi chipset ở ĐẦU token — tiền tố dòng board dính liền qua
-       gạch nối (GA-B450M, EX-B860M-V5, WS-C246, PRIME-H510M-E, TUF-B365M-PLUS-GAMING) đẩy chipset
-       ra giữa token, không bao giờ tìm thấy. Đổi sang `.search()`.
-    2. Chipset HEDT của AMD (TRX40/TRX50/WRX80/WRX90) có 3 CHỮ trước số — thêm `_MB_HEDT_CHIPSET`
-       thử trước.
-    3. Một số chipset dính liền form-factor ngay sau số, KHÔNG qua gạch nối (B650EM, A620AM,
-       H310CM) — nới hậu tố chữ tùy chọn từ 1 lên tối đa 2 ký tự.
-    4. Chipset Intel đời cũ (8/9-series: H81, H97, B85, Q87, Z87…) chỉ có 2 CHỮ SỐ — nới `\d{3}`
-       thành `\d{2,4}`.
-    5. Gigabyte đôi khi dính TÊN DÒNG ngay sau số, không qua gạch/khoảng trắng nào cả
-       (B450AORUS-PRO) — chèn khoảng trắng cho các từ dòng ĐÃ BIẾT trước khi tokenize.
-    6. ASUS ROG dòng flagship không có mã chipset digit nào — thêm nhánh dự phòng trong
-       `_mb_fallback`.
-    7. Board máy chủ/doanh nghiệp (Z11PA-U12, MW51-HP0, DBS1200SPSR…) không theo quy ước chipset
-       tiêu dùng — thêm nhánh "mã khối" trong `_mb_fallback`.
-    8. Hậu tố hạng SAU chipset ("AORUS-PRO", "AORUS-ELITE") trước đây chỉ lấy ĐOẠN ĐẦU trước dấu
-       gạch khi gom model — "AORUS-PRO" và "AORUS-ELITE" (hai board GA-X570 THẬT KHÁC NHAU) sẽ gộp
-       cùng "AORUS" nếu không sửa; giờ tách hết mọi đoạn, không chỉ đoạn đầu.
-    9. Cụm quảng cáo cuối tên kiểu " - Chính hãng giá rẻ" (TNC) từng bị nuốt làm "model" — cắt bỏ
-       mọi thứ sau " - " (gạch nối CÓ khoảng trắng — mã model thật không bao giờ viết vậy).
-    """
+    
     from .brand import brand_of
 
     if not name:
