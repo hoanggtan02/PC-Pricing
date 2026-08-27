@@ -3,6 +3,7 @@ Cách dùng:
     python -m scraper.sync_prices                          # cào tất cả active sources, ghi vào Supabase
     python -m scraper.sync_prices --dry                     # cào và in ra, không ghi vào DB
     python -m scraper.sync_prices --competitor "GearVN"     # chỉ cào MỘT cửa hàng (job song song)
+    python -m scraper.sync_prices --category "Mainboard"    # chỉ cào MỘT danh mục
     python -m scraper.sync_prices --skip-refresh             # không refresh cache cuối (dành cho job riêng)
     python -m scraper.sync_prices --failures-file out.tsv   # ghi danh sách link cào lỗi ra file TSV
 """
@@ -875,6 +876,7 @@ async def run_sync(
     dry_run: bool,
     limit: int | None = None,
     competitor: str | None = None,
+    category: str | None = None,
     skip_refresh: bool = False,
     failures_file: str | None = "sync_failures.tsv",
     single_url: str | None = None,
@@ -891,9 +893,11 @@ async def run_sync(
     else:
         # Chỉ lấy source của MỘT competitor khi chạy job song song theo cửa hàng (sync.yml matrix).
         # Bỏ trống competitor -> lấy toàn bộ (hành vi cũ, chạy tuần tự tất cả cửa hàng trong 1 process).
-        sources = fetch_active_sources(client, competitor=competitor)
+        # Truyền thêm category để chỉ lấy source của SKU thuộc MỘT danh mục (vd "Mainboard").
+        sources = fetch_active_sources(client, competitor=competitor, category=category)
         if not sources:
             who = f" cho '{competitor}'" if competitor else ""
+            who += f" danh mục '{category}'" if category else ""
             print(f"Không tìm thấy source active nào{who} trong Database.")
             if failures_file:
                 _write_failures_file(failures_file, [])
@@ -1002,6 +1006,10 @@ def main():
         help="chỉ đồng bộ giá cho MỘT competitor",
     )
     parser.add_argument(
+        "--category", default=None,
+        help="chỉ đồng bộ giá cho MỘT danh mục (vd: Monitor, Cpu, Mainboard, Laptop)",
+    )
+    parser.add_argument(
         "--skip-refresh", action="store_true",
         help="không refresh cache latest_prices sau khi chạy",
     )
@@ -1020,6 +1028,7 @@ def main():
             dry_run=args.dry,
             limit=args.limit,
             competitor=args.competitor,
+            category=(args.category.capitalize() if args.category else None),
             skip_refresh=args.skip_refresh,
             failures_file=args.failures_file or None,
             single_url=args.single_url,

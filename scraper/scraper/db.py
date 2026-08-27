@@ -81,7 +81,9 @@ def fetch_existing_source_skus(client: Client, competitor: str) -> set[str]:
     return skus
 
 
-def fetch_active_sources(client: Client, competitor: str | None = None) -> list[dict]:
+def fetch_active_sources(
+    client: Client, competitor: str | None = None, category: str | None = None
+) -> list[dict]:
     """Trả về các source đang active kèm join với sản phẩm tương ứng, để biết cần scrape gì.
 
     Một source được nhận diện bởi (product_sku, competitor); `products` được join vào để lấy
@@ -90,6 +92,10 @@ def fetch_active_sources(client: Client, competitor: str | None = None) -> list[
     Truyền `competitor` để chỉ lấy source của MỘT cửa hàng — dùng khi chạy job song song theo
     từng competitor (xem .github/workflows/sync.yml, mỗi job matrix chỉ lo một shop). Bỏ trống
     (None) sẽ lấy toàn bộ source active như trước (mọi competitor).
+
+    Truyền `category` để chỉ lấy source của các SKU thuộc MỘT danh mục (vd "Monitor", "Mainboard").
+    Dùng khi muốn cào lại giá cho riêng một danh mục thay vì toàn bộ catalog. Bỏ trống (None) sẽ
+    lấy mọi danh mục như hành vi cũ.
     """
     # PostgREST/Supabase giới hạn một response ở 1.000 dòng. Không phân trang ở
     # đây khiến job Sync tưởng chỉ có 1.000 source dù database có hàng nghìn.
@@ -97,14 +103,26 @@ def fetch_active_sources(client: Client, competitor: str | None = None) -> list[
     page = 0
     size = 1_000
 
+    # products!inner ép JOIN kiểu inner để PostgREST cho phép lọc theo cột category của bảng
+    # products qua embed filter (.eq("products.category", ...)). Chỉ đổi sang !inner khi CÓ lọc
+    # category — giữ nguyên select cũ (products, không !inner) khi không lọc, để không đổi hành
+    # vi hiện tại của các lệnh gọi cũ (vd .github/workflows/sync.yml không truyền category).
+    select_cols = (
+        "product_sku, competitor, url, products!inner(sku, name, category)"
+        if category
+        else "product_sku, competitor, url, products(sku, name)"
+    )
+
     while True:
         q = (
             client.table("sources")
-            .select("product_sku, competitor, url, products(sku, name)")
+            .select(select_cols)
             .eq("active", True)
         )
         if competitor:
             q = q.eq("competitor", competitor)
+        if category:
+            q = q.eq("products.category", category)
         rows = (
             q.order("competitor")
             .order("product_sku")
