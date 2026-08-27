@@ -91,7 +91,14 @@ brands:
   JBL:       [jbl]
   Logitech:  [logitech]
   Corsair:   [corsair]
-  Kingston:  [kingston, hyperx, fury]
+  Kingston:  [kingston, hyperx, fury, cloud]
+  Elecom:    [elecom]
+  Edifier:   [edifier]
+  Yamaha:    [yamaha]
+  Creative:  [creative]
+  SoundMax:  [soundmax]
+  Audio-Technica: [audio-technica, audiotechnica, "audio technica"]
+  BD:        [bd]
 
   # ── RAM / lưu trữ: các hãng còn thiếu khiến brand_of() rơi về tên danh mục ("Ram") và SKU bị hỏng.
   # Vd trước khi thêm: "Ram Desktop Kingmax 8GB DDR4 Bus 3200Mhz" → brand="Ram", sku="RAM-8GB-3200"

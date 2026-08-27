@@ -1400,15 +1400,21 @@ _AUDIO_COLORS = {
     # tiếng Việt
     "đen", "trắng", "đỏ", "xanh", "hồng", "tím", "xám", "bạc", "vàng",
 }
+# CHỈ loại từ KHÔNG bao giờ là một phần model: mô tả kết nối/đặc tính chung.
+# ĐÃ XÓA: "pro", "plus", "max", "mini", "ultra", "ii", "iii", "se" — các từ này
+# LÀ tên model thật (Logitech G Pro, Cloud II, WH-1000XM5 SE...) nên không được coi là filler.
 _AUDIO_FILLERS = {
-    "bluetooth", "wireless", "wired", "gaming", "usb", "cable", "stereo", "mono",
-    "true", "tws", "sport", "pro", "plus", "max", "mini", "light", "ultra",
+    "bluetooth", "wireless", "wired", "usb", "cable", "stereo", "mono",
+    "true", "tws", "sport", "light",
     "noise", "cancelling", "cancellation", "open", "ear", "in-ear", "over-ear",
     "on-ear", "headband", "neckband", "earbuds", "hands-free", "handsfree",
-    "kids", "uc", "ms", "ii", "iii", "se",
+    "kids", "uc", "ms",
     "di", "động", "dong", "máy", "may", "hội", "nghị", "nghi", "trợ",
     "giảng", "không", "dây", "day", "choàng", "nhét", "tai",
     "2.1", "2.0", "1.0",
+    # Mô tả loại sản phẩm (lọc thêm sau khi prefix strip)
+    "loa", "speaker", "speakers", "headphone", "headphones", "headset", "headsets",
+    "earphone", "earphones", "micro", "microphone", "microphones", "gaming",
 }
 # Loại phụ kiện âm thanh — THỨ TỰ QUAN TRỌNG: pattern DÀI hơn phải đứng TRƯỚC pattern ngắn
 # hơn để regex alternation ưu tiên match đúng (vd "loa bluetooth di dong" phải match trước "loa bluetooth").
@@ -1426,9 +1432,11 @@ _AUDIO_PREFIX = re.compile(
 
 
 def audio_sku(name: str | None) -> str | None:
-    """BRAND-MODEL cho thiết bị âm thanh (tai nghe / loa / micro), ví dụ "LOGITECH-ZONE305",
-    "CREATIVE-PEBBLE-PRO". Lấy model bằng vị trí: bắt đầu NGAY SAU brand token, lấy tất cả
-    token cho đến khi gặp màu/filler/số trần/đầu ngoặc."""
+    """BRAND-MODEL cho thiết bị âm thanh (tai nghe / loa / micro), ví dụ "LOGITECH-G-PRO",
+    "EDIFIER-W820NB". Dùng chiến lược KHÔNG PHỤ THUỘC VỊ TRÍ: thu thập tất cả token không phải
+    brand/filler/màu, rồi ưu tiên token chứa chữ số làm mã model — khắc phục lỗi cũ (brand_idx=None
+    cho brand dạng gạch nối như E-Dra, và filler "Pro/Gen/II" chặn token model nằm sau).
+    """
     from .brand import brand_of
 
     if not name:
@@ -1437,56 +1445,57 @@ def audio_sku(name: str | None) -> str | None:
     if brand.lower() == "other":
         return None
     BRAND = brand.upper()
-    brand_toks = set(brand.lower().replace("-", " ").split())
+
+    # Tập token nhận diện brand — bao gồm cả dạng có gạch nối, không gạch nối, và từng từ riêng lẻ.
+    # "E-Dra" → {"e-dra", "e", "dra", "edra"}; "TP-Link" → {"tp-link", "tp", "link", "tplink"}
+    brand_toks: set[str] = {
+        brand.lower(),
+        *brand.lower().replace("-", " ").split(),
+        brand.lower().replace("-", ""),
+    }
 
     # Bỏ tiền tố loại sản phẩm ("Tai nghe", "Loa", "Micro…") rồi tách token.
     body = _AUDIO_PREFIX.sub("", name)
-    # Bỏ phần trong ngoặc TRƯỚC khi tách token — mã trong ngoặc (981-001459, POCKETS-BK)
-    # thường là product ID / SKU nội bộ, KHÔNG phải model.
+    # Bỏ phần trong ngoặc — mã trong ngoặc (981-001459, 4P5K4AA) là product ID nội bộ,
+    # thường KHÔNG phải model hiển thị (bất nhất giữa cửa hàng → gây sai SKU khi dùng làm khoá).
     body = re.sub(r"\([^)]*\)", " ", body)
-    toks = [t for t in re.split(r"[\s,]+", body) if t]
+    toks = [t for t in re.split(r"[\s,/]+", body) if t]
 
-    # Tìm vị trí brand token đầu tiên trong danh sách token.
-    brand_idx = None
-    for i, t in enumerate(toks):
-        if t.lower() in brand_toks:
-            brand_idx = i
-            break
-    if brand_idx is None:
-        return None
-
-    # Thu thập model tokens: bắt đầu SAU brand, dừng ở màu/spec/số trần.
+    # Thu thập model tokens theo chiến lược KHÔNG PHỤ THUỘC VỊ TRÍ:
+    # Duyệt TOÀN BỘ token, bỏ qua brand/filler/màu — không cần tìm brand_idx.
+    # Ưu điểm: bắt được "EH496W" trong "E-Dra EH496W Black" (brand = "E-Dra" không match token
+    # nào nếu dùng brand_idx cũ vì tên "E-Dra" bị tách thành 2 token sau split trên khoảng trắng).
     model_toks: list[str] = []
-    for t in toks[brand_idx + 1:]:
-        tl = t.lower()
-        # Dừng tại màu sắc (Black, White, Đen, Trắng…) — phần sau là spec/color.
+    for t in toks:
+        tl = t.lower().strip("-")
+        # Bỏ brand token (khớp mọi biến thể gạch nối/không gạch nối/từng từ)
+        if tl in brand_toks:
+            continue
+        # Bỏ màu sắc
         if tl in _AUDIO_COLORS:
-            break
-        # Dừng tại spec/filler (Gaming, Bluetooth, Wireless, MS, UC, Stereo…).
+            continue
+        # Bỏ filler mô tả
         if tl in _AUDIO_FILLERS:
-            break
-        # Dừng tại số trần (mã trong ngoặc đã bị strip, nhưng còn sót số dạng standalone).
-        if re.fullmatch(r"\d+", t):
-            break
+            continue
+        # Bỏ số trần (năm, giá, watt…) — mã model LUÔN có chữ lẫn số hoặc toàn chữ có nghĩa
+        if re.fullmatch(r"\d+(\.\d+)?[wghz]?", t, re.I):
+            continue
         model_toks.append(t)
 
     if not model_toks:
         return None
 
-    # Ưu tiên token chữ+số dài nhất (Zone305, X1S, G7, M3).
-    mixed = [t for t in model_toks if re.search(r"\d", t)]
+    # Ưu tiên token chữ+số dài nhất (EH496W, WI-C310, A710, HS-HP21SV, 4P5K4AA).
+    mixed = [t for t in model_toks if re.search(r"\d", t) and re.search(r"[a-z]", t, re.I)]
     if mixed:
         code = max(mixed, key=len)
         return f"{BRAND}-{code}".upper().replace(" ", "-")
 
-    # Fallback: dùng model words — lấy TẤT CẢ token model (giữ vị trí, không sort length)
-    # để "Sound Blaster" không bị tách, "G PRO" không mất "G".
-    if model_toks:
-        # Giới hạn 4 token để tránh SKU quá dài.
-        parts = model_toks[:4]
-        return f"{BRAND}-{'-'.join(parts)}".upper().replace(" ", "-")
+    # Fallback: dùng tất cả token model (giữ thứ tự vị trí, không sort length)
+    # để "Sound Blaster", "G Pro" không bị đảo hay mất token.
+    parts = model_toks[:4]
+    return f"{BRAND}-{'-'.join(parts)}".upper().replace(" ", "-")
 
-    return None
 
 
 # ── Camera an ninh ──────────────────────────────────────────────────────────────────────────────
