@@ -80,7 +80,7 @@ def model_code(name: str | None, slug: str | None) -> str | None:
 # series) không nhận ra. TRƯỚC KHI SỬA, các laptop này (không khớp Apple/HP/Asus/Acer/MSI) rơi
 # thẳng xuống nhánh Dell tổng quát ở cuối _laptop_sku() — vốn chỉ tìm số 4 CHỮ SỐ ĐẦU TIÊN xuất
 # hiện trong tên (_FOUR) hoặc TOKEN CUỐI CÙNG của tên/slug làm phương án cuối cùng — nên vô tình
-# "khoá" nhầm vào một con số cấu hình GPU (RTX 3050/4050/5050/5080/2050), NĂM sản xuất (2024),
+# "khoá" nhầm vào một con số cấu hình GPU (RTX 3050/4050/5050/5080), NĂM sản xuất (2024),
 # MÀU (Xám -> XAM), hay hậu tố CPU dính trong slug URL (r5/r7/u7) thay vì mã sản phẩm thật. Hai
 # hàm dưới đây bắt đúng các mã đó, chèn vào _laptop_sku() TRƯỚC khi rơi xuống logic Dell.
 _LONG_MIXED_CODE = re.compile(r"^(?=.*[a-z])(?=.*\d)[a-z0-9]{7,24}$", re.I)
@@ -1763,19 +1763,39 @@ def _laptop_sku(name: str | None, url: str | None) -> str:
         if mc:
             return mc
 
-    # Gigabyte: dùng chung model_code() (bắt series ngắn kiểu "EG64H"/"AM6J" + hậu tố "4WH"/"6XJ",
-    # ra "EG64H-4WH"/"AM6J-6XJ"); khi KHÔNG tìm được series ngắn (mã đóng thành MỘT khối dài như
-    # "CMHH2VN893SH", "CTHH3VN893SH", "9LJR2VNF93SH", "9RC55MF5FJIINIVN000"), dùng mã hỗn hợp dài
-    # làm phương án cuối — xem ghi chú ở _long_mixed_code(). TRƯỚC KHI SỬA, Gigabyte không có
-    # nhánh riêng nào cả nên rơi thẳng xuống logic Dell bên dưới, vô tình khoá nhầm vào số cấu
-    # hình GPU/năm tìm thấy đầu tiên trong tên (RTX 3050/4050/5050/5080, năm 2024).
+    # Gigabyte: ƯU TIÊN mã hỗn hợp DÀI (_long_mixed_code) TRƯỚC model_code().
+    #
+    # BUG ĐÃ SỬA (2026-08, phát hiện qua sản phẩm "Laptop Gigabyte Eagle GL6J Eagle
+    # 9LJR2VNF93SH"): thứ tự CŨ gọi model_code() trước. model_code() dò _SER_ALPHA
+    # (^[A-Z]{1,3}\d{1,4}[A-Z]{1,4}$) trên TỪNG TOKEN — token "GL6J" (2 chữ + 1 số + 1 chữ)
+    # KHỚP pattern này (vốn dành cho series Asus/MSI như "P1403CVA"), bị hiểu nhầm là token
+    # "series", rồi model_code() ghép thêm các token theo sau nó ("EAGLE", "9LJR2VNF93SH") →
+    # SKU sai thành "GL6J-EAGLE-9LJR2VNF93SH".
+    #
+    # Hậu quả thực tế: chỉ những nguồn có chữ "gl6j" xuất hiện ngay trước mã part trong
+    # tên/URL (TNC, GearVN) mới đi vào nhánh model_code() và bị lấy nhầm; các nguồn khác
+    # (An Phát, HACOM, Phong Vũ, Phúc Anh, FPT Shop, TGDĐ) không có "gl6j" trong tên/URL nên
+    # model_code() không tìm được series nào, rơi xuống _long_mixed_code() và ra ĐÚNG
+    # "9LJR2VNF93SH" (mã part 13 ký tự, in giống nhau ở MỌI cửa hàng). Kết quả: CÙNG MỘT máy
+    # vật lý bị tách thành 2 SKU khác nhau, chỉ vì có/không có chữ "GL6J" (tên chassis/dòng
+    # máy, KHÔNG PHẢI mã định danh thật) đứng trước mã part trong tên listing của từng shop.
+    #
+    # Sửa: thử _long_mixed_code() TRƯỚC — mã part dài (>=7 ký tự chữ+số) đáng tin hơn vì nó
+    # xuất hiện nhất quán ở mọi nguồn, trong khi "GL6J" chỉ là một cách viết tên dòng máy mà
+    # không phải nguồn nào cũng ghi. Khi cả hai nguồn TNC/GearVN vẫn có "gl6j-eagle-
+    # 9ljr2vnf93sh" trong slug, _long_mixed_code() vẫn chỉ nhặt được "9ljr2vnf93sh" (13 ký
+    # tự) vì "gl6j" chỉ 4 ký tự — dưới ngưỡng tối thiểu 7 ký tự của _LONG_MIXED_CODE nên
+    # không phải candidate. Nhờ vậy MỌI nguồn đều hội tụ về cùng SKU "GIGABYTE-9LJR2VNF93SH".
+    #
+    # model_code() vẫn được giữ làm phương án DỰ PHÒNG cho các máy Gigabyte không có mã hỗn
+    # hợp dài (ví dụ máy chỉ có mã ngắn kiểu series thật "EG64H-4WH"/"AM6J-6XJ").
     if re.search(r"\bgigabyte\b", (name or ""), re.I):
-        mc = model_code(name, slug)
-        if mc:
-            return mc
         lc = _long_mixed_code(name, slug)
         if lc:
             return lc
+        mc = model_code(name, slug)
+        if mc:
+            return mc
 
     # Lenovo: mã MTM (Machine Type Model) — định danh DUY NHẤT thật, in giống nhau ở mọi cửa
     # hàng, dạng 2 chữ số + 7-9 ký tự chữ/số (21MV000PVN, 83F5008WVN, 83GS001SVN, 20YA0039VN) —

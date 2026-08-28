@@ -197,6 +197,41 @@ async def _fptshop_price_and_stock(page: Page) -> tuple[int | None, bool | None]
     return price, in_stock
 
 
+async def _phucanh_out_of_stock(page: Page) -> bool | None:
+    """Đọc khối tồn kho theo showroom của Phúc Anh (#stock-list) — tín hiệu hết hàng RIÊNG của
+    trang này, phát hiện từ HTML thật của trang sản phẩm:
+
+        <div class="stock-info" id="showroom-info1" style="display:block;">
+            <span id="ktstocksr">Đang còn hàng tại:<br> (Bấm xem dẫn đường)</span>
+            <div id="stock-list"><label>- Liên hệ 1900 2164</label></div>
+        </div>
+
+    LƯU Ý QUAN TRỌNG: nhãn tiêu đề "#ktstocksr" luôn ghi "Đang còn hàng tại..." KỂ CẢ KHI hết
+    hàng — đây là text tĩnh, không phải tín hiệu tồn kho thật. Tín hiệu THẬT nằm ở "#stock-list":
+      - CÒN HÀNG: liệt kê (các) showroom thật, ví dụ "- Showroom Thái Hà: 123 Thái Hà...".
+      - HẾT HÀNG: danh sách showroom bị thay bằng một dòng gọi điện, ví dụ
+        "- Liên hệ 1900 2164" (không có địa chỉ showroom nào).
+
+    Vì vậy CHỈ đọc riêng nội dung "#stock-list" rồi kiểm tra bằng is_out_of_stock() (đã có sẵn
+    "liên hệ" trong danh sách cụm từ hết hàng ở stock.py) — không đọc cả khối ".stock-info" (sẽ
+    luôn dính "Đang còn hàng tại" ở tiêu đề, gây báo sai còn hàng).
+
+    Trả về True nếu phát hiện hết hàng, False nếu có showroom thật, None nếu không tìm thấy khối
+    này / lỗi đọc (trang đổi cấu trúc, hoặc sản phẩm không có widget tồn kho) — caller khi đó tự
+    suy in_stock từ giá như quy ước cũ, không gắn cờ sai.
+    """
+    try:
+        loc = page.locator("#stock-list")
+        if await loc.count() == 0:
+            return None
+        text = (await loc.first.inner_text()).strip()
+        if not text:
+            return None
+        return is_out_of_stock(text)
+    except Exception:
+        return None
+
+
 def extract_labeled_price(text: str) -> int | None:
     """Lấy giá ngay sau nhãn giá chính, không lấy giá sản phẩm gợi ý."""
     patterns = (
@@ -221,14 +256,21 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
       - price: giá VND tìm được, hoặc None nếu không tìm thấy ở bất kỳ chiến lược nào.
       - in_stock_from_availability: bool nếu có tín hiệu tồn kho RÕ RÀNG (JSON-LD
         offers.availability — xem _availability_to_in_stock/_AVAILABILITY_OUT/_AVAILABILITY_IN ở
-        đầu file; hoặc banner trang riêng của FPT Shop — xem _fptshop_price_and_stock()), ngược
-        lại None (chưa biết — caller tự suy in_stock từ price > 0 như quy ước cũ).
+        đầu file; banner trang riêng của FPT Shop — xem _fptshop_price_and_stock(); hoặc khối
+        showroom riêng của Phúc Anh — xem _phucanh_out_of_stock()), ngược lại None (chưa biết —
+        caller tự suy in_stock từ price > 0 như quy ước cũ).
 
     QUAN TRỌNG — FPT Shop: chạy TRƯỚC MỌI chiến lược khác (xem _fptshop_price_and_stock() ở trên).
     Trang FPT Shop không có JSON-LD/meta giá và selector CSS cũ đã lỗi thời, nên các chiến lược
     generic bên dưới gần như không dùng được cho competitor này; nếu vì lý do nào đó
     _fptshop_price_and_stock() cũng không tìm được giá (trang đổi cấu trúc tiếp), code RƠI XUỐNG
     các chiến lược chung bên dưới như lưới an toàn thay vì bỏ cuộc ngay.
+
+    QUAN TRỌNG — Phúc Anh: kiểm tra khối "#stock-list" TRƯỚC KHI đọc giá, cùng vị trí ưu tiên với
+    khối #js-in-stock của An Phát PC bên dưới. Nếu khối này cho thấy hết hàng ("Liên hệ ..." thay
+    vì showroom thật — xem _phucanh_out_of_stock()), trả về 0 + in_stock=False NGAY LẬP TỨC,
+    KHÔNG đọc giá qua các chiến lược khác — .p-price2 vẫn có thể hiển thị một con số giá cũ dù
+    sản phẩm đã hết hàng thật, nên tín hiệu showroom đáng tin hơn và phải được ưu tiên.
 
     QUAN TRỌNG — "Liên hệ"/hết hàng: nếu Ô GIÁ CHÍNH của sản phẩm (selector đặc thù của
     competitor, strategy 3) chứa văn bản kiểu "Liên hệ"/"Hết hàng" thay vì một con số, đó là TÍN
@@ -254,6 +296,18 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
             return price, in_stock
         # Không tìm được giá qua chiến lược riêng (trang đổi cấu trúc?) — rơi xuống các chiến
         # lược chung bên dưới như lưới an toàn, KHÔNG return ở đây.
+
+    # 0a. Phúc Anh: kiểm tra khối showroom (#stock-list) TRƯỚC KHI đọc giá — xem docstring +
+    # comment ở _phucanh_out_of_stock(). "Liên hệ <hotline>" thay cho showroom thật = hết hàng
+    # thật, kể cả khi .p-price2 vẫn còn hiển thị một con số.
+    if competitor == "Phúc Anh":
+        try:
+            oos = await _phucanh_out_of_stock(page)
+            if oos:
+                print(f"  [Phúc Anh] #stock-list không có showroom thật ('Liên hệ ...') → HẾT HÀNG")
+                return 0, False
+        except Exception:
+            pass  # lỗi đọc khối tồn kho — tiếp tục các strategies bên dưới, không bỏ qua giá hợp lệ
 
     # 0b. An Phát PC: kiểm tra container kho theo vùng TRƯỚC KHI đọc giá.
     # Đồng bộ 100% với logic check_stock trong discover_anphat.py (Mode A):
