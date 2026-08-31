@@ -559,11 +559,31 @@ async def scrape_source(
             pass
 
         discontinued_pattern = r"\b(?:ngừng|ngưng|ngung)\s+kinh\s+doanh\b"
-        is_discontinued = (
-            re.search(discontinued_pattern, title, re.IGNORECASE) is not None or
-            re.search(discontinued_pattern, h1_text, re.IGNORECASE) is not None or
-            re.search(discontinued_pattern, body_text, re.IGNORECASE) is not None
-        )
+
+        # QUAN TRỌNG — TNC: chỉ kiểm tra phần tử .new-price để phát hiện "Ngừng Kinh Doanh",
+        # KHÔNG dùng body_text. Lý do: các trang TNC chứa khu vực "Sản phẩm liên quan / Hot Deal"
+        # ở cuối trang — khu vực này CÓ THỂ chứa "Ngừng Kinh Doanh" của sản phẩm KHÁC, không phải
+        # sản phẩm đang xem. Nếu dùng body_text sẽ dẫn đến false positive: deactivate nhầm sản phẩm
+        # đang bán bình thường vì một sản phẩm liên quan đã ngừng.
+        if competitor == "Thành Nhân":
+            price_zone_text = ""
+            try:
+                price_el = page.locator(".new-price")
+                if await price_el.count() > 0:
+                    price_zone_text = (await price_el.first.inner_text()).strip()
+            except Exception:
+                pass
+            is_discontinued = (
+                re.search(discontinued_pattern, title, re.IGNORECASE) is not None or
+                re.search(discontinued_pattern, h1_text, re.IGNORECASE) is not None or
+                re.search(discontinued_pattern, price_zone_text, re.IGNORECASE) is not None
+            )
+        else:
+            is_discontinued = (
+                re.search(discontinued_pattern, title, re.IGNORECASE) is not None or
+                re.search(discontinued_pattern, h1_text, re.IGNORECASE) is not None or
+                re.search(discontinued_pattern, body_text, re.IGNORECASE) is not None
+            )
 
         if is_discontinued:
             if competitor == "Thành Nhân":
