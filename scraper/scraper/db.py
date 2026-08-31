@@ -247,3 +247,52 @@ def insert_prices(client: Client, rows: list[dict]) -> None:
         client.table("price_history").insert(
             [{"currency": "VND", "is_used": r.get("is_used", False), **r} for r in rows]
         ).execute()
+
+def fetch_all_sources(
+    client: Client, competitor: str | None = None, category: str | None = None
+) -> list[dict]:
+    """Giống fetch_active_sources nhưng lấy CẢ nguồn active LẪN inactive — dùng cho
+    audit_category.py: tính lại SKU, cào lại giá, xác minh ngừng kinh doanh, bất kể source đang
+    bật/tắt. Trả về thêm cột `active`/`is_manual_url`/`is_used` và `products.name`/`brand` (để
+    so độ khớp với TNC) trong mỗi row.
+    """
+    all_sources: list[dict] = []
+    page = 0
+    size = 1_000
+
+    select_cols = (
+        "product_sku, competitor, url, active, is_manual_url, is_used, "
+        "products!inner(sku, name, brand, category)"
+        if category
+        else "product_sku, competitor, url, active, is_manual_url, is_used, products(sku, name, brand)"
+    )
+
+    while True:
+        q = client.table("sources").select(select_cols)
+        if competitor:
+            q = q.eq("competitor", competitor)
+        if category:
+            q = q.eq("products.category", category)
+        rows = (
+            q.order("competitor")
+            .order("product_sku")
+            .range(page * size, page * size + size - 1)
+            .execute()
+            .data
+            or []
+        )
+        all_sources.extend(rows)
+        if len(rows) < size:
+            break
+        page += 1
+
+    return all_sources
+
+
+def set_source_active(client: Client, product_sku: str, competitor: str, active: bool) -> None:
+    """Bật/tắt một source cụ thể. Dùng khi audit phát hiện source ĐANG TẮT nhưng thực ra vẫn còn
+    bán (nên bật lại — audit_category.py gọi khi vậy), hoặc muốn tắt tay mà không đi qua
+    deactivate_source (vốn chỉ tắt, không bật lại được)."""
+    client.table("sources").update({"active": active}).match(
+        {"product_sku": product_sku, "competitor": competitor}
+    ).execute()
