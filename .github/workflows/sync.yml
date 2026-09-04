@@ -39,10 +39,9 @@ name: Daily price sync (Mode B - Link crawl)
 
 on:
   schedule:
-    # Run 1: 01:00 VN (18:00 UTC hôm trước) → xong ~02:00 VN
-    - cron: "0 18 * * *"
-    # Run 2: 13:00 VN (06:00 UTC) → xong ~14:00 VN
-    - cron: "0 6 * * *"
+    # Cào giá tự động cứ 6 tiếng 1 lần (4 lần/ngày):
+    # 01:00 VN (18:00 UTC) | 07:00 VN (00:00 UTC) | 13:00 VN (06:00 UTC) | 19:00 VN (12:00 UTC)
+    - cron: "0 0,6,12,18 * * *"
   workflow_dispatch:
 
 # Chỉ 1 lần chạy tại một thời điểm (tránh đụng Supabase)
