@@ -109,9 +109,9 @@ SELECTORS = {
     "Phúc Anh": [".pd-special-price", ".sale-price", ".pd-price", ".p-price2", ".price-current", ".p-price"]
 }
 
-_AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued"}
+_AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued", "preorder", "presale"}
 _AVAILABILITY_IN = {
-    "instock", "limitedavailability", "onlineonly", "presale", "preorder", "backorder",
+    "instock", "limitedavailability", "onlineonly", "backorder",
 }
 
 
@@ -201,13 +201,23 @@ async def _phucanh_out_of_stock(page: Page) -> bool | None:
 
 
 async def _hacom_out_of_stock(page: Page) -> bool | None:
-
+    """Tín hiệu hết hàng riêng của HACOM (Hà Nội Computer):
+    1. Thẻ/nút mua chứa 'ĐĂNG KÝ MUA' hoặc 'Nhận thông báo khi có hàng'
+    2. Meta `product:price:amount` hoặc JSON-LD trả về 0.
+    """
     try:
         oos = await page.evaluate(
             """() => {
-                const els = Array.from(document.querySelectorAll('button, a'));
-                return els.some(e => /đăng ký mua|nhận thông báo khi có hàng/i
-                    .test((e.textContent || '')));
+                const els = Array.from(document.querySelectorAll('button, a, .btn, .product-buy, .pro-detail-btn'));
+                const has_dk_btn = els.some(e => /đăng ký mua|nhận thông báo khi có hàng/i.test((e.textContent || '')));
+                if (has_dk_btn) return true;
+                
+                const meta = document.querySelector('meta[property="product:price:amount"], meta[name="product:price:amount"]');
+                if (meta) {
+                    const content = meta.getAttribute('content');
+                    if (content === '0' || content === '0.00') return true;
+                }
+                return false;
             }"""
         )
         return bool(oos)
@@ -590,13 +600,6 @@ async def scrape_source(
             await page.wait_for_timeout(1500 if is_slow else 1200)
             price, availability_stock = await extract_price_generic(page, competitor)
 
-        # Chưa tìm được giá SAU mọi lần đọc lại -> kiểm tra xem có phải trang bị CHẶN BOT/chưa tải
-        # xong hay không (xem _looks_blocked ở đầu file — phát hiện từ vụ An Phát 2026-08: hàng
-        # loạt "Không tìm thấy giá" với html chỉ 0-6.5KB, quá nhỏ so với trang sản phẩm thật).
-        # Nếu đúng vậy, cho MỘT cơ hội cuối: điều hướng lại với wait_until="domcontentloaded"
-        # (chờ đầy đủ hơn "commit" — commit chỉ cần nhận header đầu tiên) + chờ thêm rồi đọc lại.
-        # RẺ hơn nhiều so với việc âm thầm mất hẳn sản phẩm đó mỗi lượt chạy chỉ vì gặp trang
-        # challenge/chưa kịp render.
         if price is None:
             try:
                 stale_html = await page.content()
@@ -624,7 +627,7 @@ async def scrape_source(
                 )
                 price = 0
                 availability_stock = False
-            in_stock = availability_stock if availability_stock is not None else price > 0
+            in_stock = False if (price is None or price <= 0) else (availability_stock if availability_stock is not None else True)
             flag = "" if in_stock else "  [Liên hệ/hết hàng — không ghi nhầm giá SP khác]"
             print(f"  ✅ {competitor} - {sku}: {price:,} VND{flag}")
             if results is not None:
@@ -639,9 +642,6 @@ async def scrape_source(
                 html_len = len(await page.content())
             except Exception:
                 html_len = -1
-            # Gắn nhãn NGHI BOT-BLOCK khi html vẫn quá nhỏ SAU CẢ lần thử lại ở trên — giúp phân
-            # biệt "bị chặn/chưa tải xong dai dẳng" (đáng xem lại proxy/tần suất request) với
-            # "trang tải đủ nhưng đổi cấu trúc/selector" (đáng xem lại SELECTORS) khi đọc report.
             suspect_block = html_len == -1 or html_len < MIN_HTML_LEN_SUSPECT_BLOCK
             tag = "[NGHI BOT-BLOCK] " if suspect_block else ""
             print(
@@ -739,7 +739,7 @@ async def scrape_source(
                     await retry_pg.close()
                     await retry_page.close()
                     if retry_price is not None:
-                        in_stock_retry = retry_stock if retry_stock is not None else retry_price > 0
+                        in_stock_retry = False if (retry_price is None or retry_price <= 0) else (retry_stock if retry_stock is not None else True)
                         is_used_retry = is_old_listing_name(retry_title) or is_old_listing_name(retry_h1)
                         if is_used_retry:
                             print(f"  [USED] {competitor} - {sku}: phát hiện hàng cũ/demo (retry) ({retry_title[:80]})")
