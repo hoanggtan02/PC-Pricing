@@ -138,20 +138,7 @@ def clean_price(text: str) -> int | None:
 
 
 def _price_value_to_int(price_raw) -> int | None:
-    """Chuyển một giá trị SỐ CHUẨN (JSON-LD offers.price, hoặc content của thẻ meta) thành int VND.
 
-    BUG THẬT (TGDD, phát hiện 2026-08 — "giá cào bị x10"): trước đây strategy 1/2 dùng
-    `clean_price(str(price_raw))`. clean_price() strip mọi ký tự không phải chữ số, coi "." là
-    dấu PHÂN CÁCH NGHÌN kiểu hiển thị VN ("20.990.000" -> "20990000") — đúng cho text hiển thị
-    trên trang. Nhưng offers.price của JSON-LD (và content của <meta>) là một SỐ THEO CHUẨN
-    schema.org/Open Graph: dấu "." ở đó LÀ dấu THẬP PHÂN, không phải phân cách nghìn. TGDD trả về
-    price dạng FLOAT TRÒN (vd 20990000.0); str(20990000.0) = "20990000.0" rồi bị clean_price()
-    nuốt luôn dấu chấm thập phân vào thành chuỗi số → "209900000" — GIÁ BỊ NHÂN 10 cho MỌI sản
-    phẩm TGDD (giá VND luôn là số tròn nên luôn dính ".0"), đúng triệu chứng báo cáo.
-
-    Parse ĐÚNG kiểu số (float) rồi ROUND về int — không strip ký tự. Dự phòng: nếu parse float
-    thất bại (giá trị dính ký hiệu tiền tệ/chuỗi lạ), rơi về clean_price() như cũ thay vì mất giá.
-    """
     if price_raw is None:
         return None
     try:
@@ -200,28 +187,7 @@ async def _fptshop_price_and_stock(page: Page) -> tuple[int | None, bool | None]
 
 
 async def _phucanh_out_of_stock(page: Page) -> bool | None:
-    """Đọc khối tồn kho theo showroom của Phúc Anh (#stock-list) — tín hiệu hết hàng RIÊNG của
-    trang này, phát hiện từ HTML thật của trang sản phẩm:
 
-        <div class="stock-info" id="showroom-info1" style="display:block;">
-            <span id="ktstocksr">Đang còn hàng tại:<br> (Bấm xem dẫn đường)</span>
-            <div id="stock-list"><label>- Liên hệ 1900 2164</label></div>
-        </div>
-
-    LƯU Ý QUAN TRỌNG: nhãn tiêu đề "#ktstocksr" luôn ghi "Đang còn hàng tại..." KỂ CẢ KHI hết
-    hàng — đây là text tĩnh, không phải tín hiệu tồn kho thật. Tín hiệu THẬT nằm ở "#stock-list":
-      - CÒN HÀNG: liệt kê (các) showroom thật, ví dụ "- Showroom Thái Hà: 123 Thái Hà...".
-      - HẾT HÀNG: danh sách showroom bị thay bằng một dòng gọi điện, ví dụ
-        "- Liên hệ 1900 2164" (không có địa chỉ showroom nào).
-
-    Vì vậy CHỈ đọc riêng nội dung "#stock-list" rồi kiểm tra bằng is_out_of_stock() (đã có sẵn
-    "liên hệ" trong danh sách cụm từ hết hàng ở stock.py) — không đọc cả khối ".stock-info" (sẽ
-    luôn dính "Đang còn hàng tại" ở tiêu đề, gây báo sai còn hàng).
-
-    Trả về True nếu phát hiện hết hàng, False nếu có showroom thật, None nếu không tìm thấy khối
-    này / lỗi đọc (trang đổi cấu trúc, hoặc sản phẩm không có widget tồn kho) — caller khi đó tự
-    suy in_stock từ giá như quy ước cũ, không gắn cờ sai.
-    """
     try:
         loc = page.locator("#stock-list")
         if await loc.count() == 0:
@@ -230,6 +196,21 @@ async def _phucanh_out_of_stock(page: Page) -> bool | None:
         if not text:
             return None
         return is_out_of_stock(text)
+    except Exception:
+        return None
+
+
+async def _hacom_out_of_stock(page: Page) -> bool | None:
+
+    try:
+        oos = await page.evaluate(
+            """() => {
+                const els = Array.from(document.querySelectorAll('button, a'));
+                return els.some(e => /đăng ký mua|nhận thông báo khi có hàng/i
+                    .test((e.textContent || '')));
+            }"""
+        )
+        return bool(oos)
     except Exception:
         return None
 
@@ -252,45 +233,7 @@ def extract_labeled_price(text: str) -> int | None:
 
 
 async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None, bool | None]:
-    """Sử dụng nhiều chiến lược để trích xuất giá (và, khi có, tín hiệu tồn kho) từ trang sản phẩm.
 
-    Trả về (price, in_stock_from_availability):
-      - price: giá VND tìm được, hoặc None nếu không tìm thấy ở bất kỳ chiến lược nào.
-      - in_stock_from_availability: bool nếu có tín hiệu tồn kho RÕ RÀNG (JSON-LD
-        offers.availability — xem _availability_to_in_stock/_AVAILABILITY_OUT/_AVAILABILITY_IN ở
-        đầu file; banner trang riêng của FPT Shop — xem _fptshop_price_and_stock(); hoặc khối
-        showroom riêng của Phúc Anh — xem _phucanh_out_of_stock()), ngược lại None (chưa biết —
-        caller tự suy in_stock từ price > 0 như quy ước cũ).
-
-    QUAN TRỌNG — FPT Shop: chạy TRƯỚC MỌI chiến lược khác (xem _fptshop_price_and_stock() ở trên).
-    Trang FPT Shop không có JSON-LD/meta giá và selector CSS cũ đã lỗi thời, nên các chiến lược
-    generic bên dưới gần như không dùng được cho competitor này; nếu vì lý do nào đó
-    _fptshop_price_and_stock() cũng không tìm được giá (trang đổi cấu trúc tiếp), code RƠI XUỐNG
-    các chiến lược chung bên dưới như lưới an toàn thay vì bỏ cuộc ngay.
-
-    QUAN TRỌNG — Phúc Anh: kiểm tra khối "#stock-list" TRƯỚC KHI đọc giá, cùng vị trí ưu tiên với
-    khối #js-in-stock của An Phát PC bên dưới. Nếu khối này cho thấy hết hàng ("Liên hệ ..." thay
-    vì showroom thật — xem _phucanh_out_of_stock()), trả về 0 + in_stock=False NGAY LẬP TỨC,
-    KHÔNG đọc giá qua các chiến lược khác — .p-price2 vẫn có thể hiển thị một con số giá cũ dù
-    sản phẩm đã hết hàng thật, nên tín hiệu showroom đáng tin hơn và phải được ưu tiên.
-
-    QUAN TRỌNG — "Liên hệ"/hết hàng: nếu Ô GIÁ CHÍNH của sản phẩm (selector đặc thù của
-    competitor, strategy 3) chứa văn bản kiểu "Liên hệ"/"Hết hàng" thay vì một con số, đó là TÍN
-    HIỆU THẬT (sản phẩm hết hàng/báo giá riêng), KHÔNG PHẢI "chưa tìm thấy giá". Ta trả về 0 NGAY
-    LẬP TỨC (kèm in_stock=False dứt khoát) và KHÔNG rơi xuống strategy 4 (regex quét toàn bộ HTML
-    trang).
-    Lý do: trang chi tiết TNC luôn có thêm khối "Sản phẩm liên quan/tương tự", và những khối đó
-    dùng CHUNG class giá (.new-price/.product-price) hoặc có số tiền trong text ở đâu đó trên
-    trang. Nếu tiếp tục quét toàn trang sau khi đã biết sản phẩm CHÍNH là "Liên hệ", ta rất dễ
-    vớ nhầm giá của MỘT SẢN PHẨM KHÁC hiển thị cùng trang rồi ghi sai vào price_history — đúng bug
-    đã gặp trên production. Dừng ngay ở đây loại bỏ khả năng đó.
-
-    QUAN TRỌNG — giá vẫn niêm yết nhưng THỰC TẾ hết hàng (CellphoneS): một số trang giữ nguyên
-    offers.price bình thường trong JSON-LD dù sản phẩm đang tạm hết hàng; tín hiệu hết hàng thật
-    nằm ở offers.availability (CÙNG object với price, đọc được miễn phí — không cần thêm DOM
-    query/selector riêng). Xem khối comment ở đầu file. Ta đọc field này ngay trong strategy 1 và
-    trả kèm theo price, để caller (scrape_source) ưu tiên nó hơn suy luận "price > 0".
-    """
     # 0. FPT Shop: chiến lược riêng, chạy TRƯỚC — xem docstring + comment ở _fptshop_price_and_stock().
     if competitor == "FPT Shop":
         price, in_stock = await _fptshop_price_and_stock(page)
@@ -337,7 +280,18 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
         except Exception as e:
             pass  # Nếu lỗi, tiếp tục strategies bên dưới để không bỏ qua giá trị hợp lệ
 
-
+    # 0c. Hà Nội Computer (HACOM): kiểm tra nút mua TRƯỚC KHI đọc giá — xem docstring +
+    # comment ở _hacom_out_of_stock(). Giá vẫn hiển thị bình thường khi hết hàng (khác Phúc
+    # Anh/An Phát, nơi khối showroom/tồn kho biến mất), nên tín hiệu OOS chỉ đáng tin qua nút
+    # mua, không thể suy từ ô giá như các competitor khác.
+    if competitor == "Hà Nội Computer":
+        try:
+            oos = await _hacom_out_of_stock(page)
+            if oos:
+                print(f"  [Hà Nội Computer] Phát hiện nút 'ĐĂNG KÝ MUA/Nhận thông báo' → HẾT HÀNG")
+                return 0, False
+        except Exception:
+            pass  # lỗi đọc nút mua — tiếp tục các strategies bên dưới, không bỏ qua giá hợp lệ
 
     html = await page.content()
     availability_stock: bool | None = None
