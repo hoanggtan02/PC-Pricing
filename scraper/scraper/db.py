@@ -296,3 +296,67 @@ def set_source_active(client: Client, product_sku: str, competitor: str, active:
     client.table("sources").update({"active": active}).match(
         {"product_sku": product_sku, "competitor": competitor}
     ).execute()
+
+
+def fetch_latest_prices(
+    client: Client, skus: list[str], competitor: str | None = None
+) -> dict[tuple[str, str], dict]:
+    """Giá GẦN NHẤT của mỗi (product_sku, competitor) trong một tập SKU. Dùng cho các báo cáo
+    chỉ-đọc như find_anomalies.py — không mở trang cào lại, chỉ đọc dữ liệu đã có trong DB.
+
+    Đọc từ `latest_prices_cache` trước (đã tính sẵn, nhanh) — GIẢ ĐỊNH nó có cùng hình dạng cột
+    với price_history (product_sku, competitor, price, in_stock, is_used), vì đó là ảnh chụp mới
+    nhất của chính bảng đó (xem refresh_views.py). NẾU schema thật khác (ví dụ tên cột khác), sửa
+    lại câu select() trong _from_cache() bên dưới cho khớp — hiện tại nó tự rơi xuống price_history
+    khi cache lỗi, nên vẫn chạy đúng dù chậm hơn.
+
+    Nếu đọc cache lỗi (bảng không tồn tại / cột sai tên), tự rơi xuống quét `price_history` sắp
+    theo scraped_at giảm dần và giữ bản ĐẦU TIÊN gặp cho mỗi (sku, competitor) — chậm hơn nhưng
+    luôn đúng vì đọc thẳng từ nguồn.
+
+    Trả về {(product_sku, competitor): {"price", "in_stock", "is_used", ...}}.
+    """
+    skus = list(skus)
+    if not skus:
+        return {}
+    CHUNK = 200  # tránh URL quá dài với .in_() khi category có nhiều SKU
+
+    def _from_cache() -> dict[tuple[str, str], dict]:
+        res: dict[tuple[str, str], dict] = {}
+        for i in range(0, len(skus), CHUNK):
+            chunk = skus[i : i + CHUNK]
+            q = (
+                client.table("latest_prices_cache")
+                .select("product_sku, competitor, price, in_stock, is_used")
+                .in_("product_sku", chunk)
+            )
+            if competitor:
+                q = q.eq("competitor", competitor)
+            for r in q.execute().data or []:
+                res[(r["product_sku"], r["competitor"])] = r
+        return res
+
+    try:
+        return _from_cache()
+    except Exception as e:
+        print(
+            f"  ⚠️  Không đọc được latest_prices_cache ({e}) — rơi xuống price_history "
+            f"(chậm hơn, tự dedupe theo scraped_at)."
+        )
+
+    out: dict[tuple[str, str], dict] = {}
+    for i in range(0, len(skus), CHUNK):
+        chunk = skus[i : i + CHUNK]
+        q = (
+            client.table("price_history")
+            .select("product_sku, competitor, price, in_stock, is_used, scraped_at")
+            .in_("product_sku", chunk)
+            .order("scraped_at", desc=True)
+        )
+        if competitor:
+            q = q.eq("competitor", competitor)
+        for r in q.execute().data or []:
+            key = (r["product_sku"], r["competitor"])
+            if key not in out:  # đã sắp giảm dần -> bản gặp đầu tiên là MỚI NHẤT
+                out[key] = r
+    return out
