@@ -14,6 +14,7 @@ import os
 import argparse
 import asyncio
 from collections import Counter
+import random
 import re
 import sys
 import json
@@ -34,10 +35,11 @@ PER_COMPETITOR_CONCURRENCY = {
     "CellphoneS": 4,
     "Thành Nhân": 8,    
     "An Phát PC": 4,
-    "Phúc Anh": 3,
+    "Phúc Anh": 1,  # Đặt concurrency = 1 cho Phúc Anh để cào tuần tự, tránh Cloudflare Rate-Limit (HTTP 429)
 }
 
 MIN_VALID_PRICE = 500
+DISCONTINUED_PATTERN = r"\b(?:ngừng|ngưng|ngung)\s+kinh\s+doanh\b"
 
 # ── Phát hiện trang có khả năng bị CHẶN BOT (Cloudflare challenge/WAF) thay vì "đổi cấu trúc" ──
 # BUG THỰC TẾ (An Phát, phát hiện 2026-08): hàng loạt "Không tìm thấy giá trên trang" với html
@@ -104,7 +106,7 @@ SELECTORS = {
     "FPT Shop": [".b1-semibold", ".fpt-price", ".price-current"],
     "Thế Giới Di Động": [".box-price-present", ".price-current"],
     "Tin Học Ngôi Sao": [".pdPrice span", ".pdPrice", "[itemprop='price']"],
-    "Phúc Anh": [".p-price2", ".price-current", ".p-price"]
+    "Phúc Anh": [".pd-special-price", ".sale-price", ".pd-price", ".p-price2", ".price-current", ".p-price"]
 }
 
 _AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued"}
@@ -524,13 +526,26 @@ async def scrape_source(
     await page.route("**/*", lambda route: route.abort() if route.request.resource_type in {"image", "media", "font"} else route.continue_())
 
     try:
+        if competitor == "Phúc Anh":
+            # Phúc Anh áp dụng Cloudflare Rate Limiting nghiêm ngặt.
+            # Nghỉ 1.5s - 2.5s giữa các request để không kích hoạt HTTP 429 Access Denied.
+            await asyncio.sleep(random.uniform(1.5, 2.5))
+
         print(f"  → Đang cào {competitor} - {sku}...")
         # Navigate với timeout riêng cho site cần proxy VN — 15s thay vì 30s mặc định. Khi một
         # proxy đã chết/treo (không commit được response), mỗi request qua nó chắc chắn ăn đủ
         # timeout rồi mới fail; rút ngắn timeout không đổi kết quả (vẫn fail) nhưng giảm ~50% thời
         # gian lãng phí trước khi worker rảnh ra để dùng proxy khác (xem GOTO_TIMEOUT_MS ở đầu file).
         goto_timeout = GOTO_TIMEOUT_MS["proxy"] if proxy is not None else GOTO_TIMEOUT_MS["default"]
-        await page.goto(url, wait_until="commit", timeout=goto_timeout)
+        resp = await page.goto(url, wait_until="commit", timeout=goto_timeout)
+
+        # Kiểm tra nếu bị Cloudflare 429 / Access Denied
+        title = await page.title()
+        if (resp and resp.status == 429) or "access denied" in title.lower() or "cloudflare" in title.lower():
+            print(f"  ⚠️  [Phúc Anh/Cloudflare] Bị 429 Rate-Limit, nghỉ 3.5s và thử lại {sku}...")
+            await asyncio.sleep(3.5)
+            resp = await page.goto(url, wait_until="commit", timeout=goto_timeout)
+            title = await page.title()
 
         # Chờ ĐÚNG theo tín hiệu khối giá đã render (không phải chờ cố định) — xem _wait_price_rendered.
         # Site "nặng" (SLOW_COMPETITORS) được cấp thêm thời gian: khi CI chạy nhiều tab song song, các
@@ -558,7 +573,7 @@ async def scrape_source(
         except Exception:
             pass
 
-        discontinued_pattern = r"\b(?:ngừng|ngưng|ngung)\s+kinh\s+doanh\b"
+        discontinued_pattern = DISCONTINUED_PATTERN
 
         # QUAN TRỌNG — TNC: chỉ kiểm tra phần tử .new-price để phát hiện "Ngừng Kinh Doanh",
         # KHÔNG dùng body_text. Lý do: các trang TNC chứa khu vực "Sản phẩm liên quan / Hot Deal"
@@ -638,6 +653,8 @@ async def scrape_source(
                     f"  🔁 {competitor} - {sku}: nghi trang bị chặn bot/chưa tải xong "
                     f"(html={len(stale_html)} ký tự) — thử lại với chờ lâu hơn..."
                 )
+                if competitor == "Phúc Anh":
+                    await asyncio.sleep(4.0)
                 try:
                     await page.goto(url, wait_until="domcontentloaded", timeout=25000)
                 except Exception:
