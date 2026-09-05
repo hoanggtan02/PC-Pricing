@@ -23,6 +23,7 @@ competitors:
   phongvu:    { search_url: "https://phongvu.vn/search?router=productListing&query={query}" }
   tinhocngoisao: { search_url: "https://tinhocngoisao.com/search?q={query}" }
   phucanh:    { search_url: "https://www.phucanh.vn/tim?q={query}" }
+  ankhang:    { search_url: "https://www.ankhang.vn/tim?q={query}" }
 
 # ── categories ─────────────────────────────────────────────────────────────────────────────────
 categories:

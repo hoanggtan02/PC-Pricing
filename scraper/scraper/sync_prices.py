@@ -88,7 +88,7 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop", "Thế Giới Di Động", "Phúc Anh"}
+PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop", "Thế Giới Di Động"}
 
 GOTO_TIMEOUT_MS = {
     "default": 30000,
@@ -106,7 +106,8 @@ SELECTORS = {
     "FPT Shop": [".b1-semibold", ".fpt-price", ".price-current"],
     "Thế Giới Di Động": [".box-price-present", ".price-current"],
     "Tin Học Ngôi Sao": [".pdPrice span", ".pdPrice", "[itemprop='price']"],
-    "Phúc Anh": [".pd-special-price", ".sale-price", ".pd-price", ".p-price2", ".price-current", ".p-price"]
+    "Phúc Anh": [".pd-special-price", ".sale-price", ".pd-price", ".p-price2", ".price-current", ".p-price"],
+    "An Khang": [".p-price", ".price-current", ".product-price", ".pd-price", ".giakuyenmai", ".special-price"]
 }
 
 _AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued", "preorder", "presale"}
@@ -225,6 +226,27 @@ async def _hacom_out_of_stock(page: Page) -> bool | None:
         return None
 
 
+async def _ankhang_out_of_stock(page: Page) -> bool | None:
+    """Tín hiệu hết hàng riêng cho An Khang Computer:
+    1. Có nút '.now_cart' ('MUA NGAY') -> còn hàng (return False).
+    2. Hoặc có '.btn-contact-shop' mà KHÔNG CÓ '.now_cart' -> hết hàng (return True).
+    """
+    try:
+        oos = await page.evaluate(
+            """() => {
+                const hasBuyNow = !!document.querySelector('.now_cart, .add_cart, .btn-buy-now');
+                if (hasBuyNow) return false;
+                const hasContact = !!document.querySelector('.btn-contact-shop');
+                const text = document.body.textContent || '';
+                if (hasContact || /tạm hết hàng|hết hàng|ngừng kinh doanh/i.test(text)) return true;
+                return false;
+            }"""
+        )
+        return bool(oos)
+    except Exception:
+        return None
+
+
 def extract_labeled_price(text: str) -> int | None:
     """Lấy giá ngay sau nhãn giá chính, không lấy giá sản phẩm gợi ý."""
     patterns = (
@@ -302,6 +324,16 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
                 return 0, False
         except Exception:
             pass  # lỗi đọc nút mua — tiếp tục các strategies bên dưới, không bỏ qua giá hợp lệ
+
+    # 0d. An Khang Computer: kiểm tra tình trạng "Liên hệ" / nút btn-contact-shop
+    if competitor == "An Khang":
+        try:
+            oos = await _ankhang_out_of_stock(page)
+            if oos:
+                print(f"  [An Khang] Phát hiện 'Tình trạng: Liên hệ' / nút liên hệ → HẾT HÀNG")
+                return 0, False
+        except Exception:
+            pass
 
     html = await page.content()
     availability_stock: bool | None = None

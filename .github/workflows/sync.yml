@@ -69,6 +69,7 @@ jobs:
           - { id: tgdd,        competitor: "Thế Giới Di Động" }
           - { id: tinhocngoisao, competitor: "Tin Học Ngôi Sao" }
           - { id: phucanh,     competitor: "Phúc Anh" }
+          - { id: ankhang,     competitor: "An Khang" }
     defaults:
       run:
         working-directory: scraper
