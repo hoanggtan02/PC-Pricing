@@ -36,6 +36,7 @@ PER_COMPETITOR_CONCURRENCY = {
     "Thành Nhân": 8,    
     "An Phát PC": 4,
     "Phúc Anh": 1,  # Đặt concurrency = 1 cho Phúc Anh để cào tuần tự, tránh Cloudflare Rate-Limit (HTTP 429)
+    "An Khang": 2,  # Đặt concurrency = 2 cho An Khang để tránh Server Disconnect
 }
 
 MIN_VALID_PRICE = 500
@@ -107,7 +108,7 @@ SELECTORS = {
     "Thế Giới Di Động": [".box-price-present", ".price-current"],
     "Tin Học Ngôi Sao": [".pdPrice span", ".pdPrice", "[itemprop='price']"],
     "Phúc Anh": [".pd-special-price", ".sale-price", ".pd-price", ".p-price2", ".price-current", ".p-price"],
-    "An Khang": [".p-price", ".price-current", ".product-price", ".pd-price", ".giakuyenmai", ".special-price"]
+    "An Khang": [".pd-table-2021 .pro-price", ".p-detail-right .pro-price", ".pro-price", ".detail-price", ".product-price", ".pd-price", ".giakuyenmai", ".special-price"]
 }
 
 _AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued", "preorder", "presale"}
@@ -325,13 +326,23 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
         except Exception:
             pass  # lỗi đọc nút mua — tiếp tục các strategies bên dưới, không bỏ qua giá hợp lệ
 
-    # 0d. An Khang Computer: kiểm tra tình trạng "Liên hệ" / nút btn-contact-shop
+    # 0d. An Khang Computer: kiểm tra tình trạng "Liên hệ" / nút btn-contact-shop và lấy giá khuyến mại
     if competitor == "An Khang":
         try:
             oos = await _ankhang_out_of_stock(page)
             if oos:
                 print(f"  [An Khang] Phát hiện 'Tình trạng: Liên hệ' / nút liên hệ → HẾT HÀNG")
                 return 0, False
+        except Exception:
+            pass
+
+        try:
+            pro_el = page.locator(".pd-table-2021 .pro-price, .p-detail-right .pro-price, .pro-price").first
+            if await pro_el.count() > 0 and await pro_el.is_visible():
+                txt = await pro_el.inner_text()
+                p = clean_price(txt)
+                if p and p > 1000:
+                    return p, True
         except Exception:
             pass
 
