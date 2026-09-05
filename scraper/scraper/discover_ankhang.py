@@ -145,74 +145,81 @@ def main() -> int:
         "--category", default="laptop", choices=sorted(categories()),
         help="product category to scrape",
     )
+    ap.add_argument("--all", action="store_true", help="discover all categories")
     ap.add_argument("--dry", action="store_true", help="print results, don't write to DB")
     args = ap.parse_args()
 
     client = get_client()
     ensure_competitor(client, COMPETITOR)
-    tracked = fetch_catalog_skus(client, args.category.capitalize())
-    if not tracked:
-        print(f"No tracked products found for category '{args.category}'.")
-        return 0
+    
+    cats_to_run = sorted(categories()) if args.all else [args.category]
+    total_inserted = 0
 
-    print(f"[{COMPETITOR}] Discovering category '{args.category}'...")
-    raw = discover(category=args.category)
-    print(f"  Found {len(raw)} raw items on An Khang search page.")
+    for cat in cats_to_run:
+        tracked = fetch_catalog_skus(client, cat.capitalize())
+        if not tracked:
+            continue
 
-    category_label = args.category.capitalize()
-    matched: dict[str, dict] = {}
-    for item in raw:
-        sku = derive_sku(item["name"], item.get("url"), category_label)
-        if sku and sku in tracked and sku not in matched:
-            matched[sku] = item
+        print(f"\n[{COMPETITOR}] Discovering category '{cat}'...")
+        raw = discover(category=cat)
+        print(f"  Found {len(raw)} raw items on An Khang search page.")
 
-    print(f"  Matched {len(matched)} SKUs against TNC catalog.")
-    if not matched:
-        return 0
+        category_label = cat.capitalize()
+        matched: dict[str, dict] = {}
+        for item in raw:
+            sku = derive_sku(item["name"], item.get("url"), category_label)
+            if sku and sku in tracked and sku not in matched:
+                matched[sku] = item
 
-    existing_skus = fetch_existing_source_skus(client, COMPETITOR)
-    new_items = {k: v for k, v in matched.items() if k not in existing_skus}
-    existing_items = {k: v for k, v in matched.items() if k in existing_skus}
+        print(f"  Matched {len(matched)} SKUs against TNC catalog.")
+        if not matched:
+            continue
 
-    print(f"  New SKUs to insert: {len(new_items)} | Existing SKUs to update URL: {len(existing_items)}")
+        existing_skus = fetch_existing_source_skus(client, COMPETITOR)
+        new_items = {k: v for k, v in matched.items() if k not in existing_skus}
+        existing_items = {k: v for k, v in matched.items() if k in existing_skus}
 
-    # Check stock cho SKU MỚI
-    new_stock = check_stock([v["url"] for v in new_items.values()]) if new_items else {}
+        print(f"  New SKUs to insert: {len(new_items)} | Existing SKUs to update URL: {len(existing_items)}")
 
-    if args.dry:
-        print("\n--- DRY RUN RESULTS ---")
-        for sku, item in matched.items():
-            is_new = sku in new_items
-            in_s = new_stock.get(item["url"], True) if is_new else True
+        # Check stock cho SKU MỚI
+        new_stock = check_stock([v["url"] for v in new_items.values()]) if new_items else {}
+
+        if args.dry:
+            print("\n--- DRY RUN RESULTS ---")
+            for sku, item in matched.items():
+                is_new = sku in new_items
+                in_s = new_stock.get(item["url"], True) if is_new else True
+                is_u = is_old_listing_name(item["name"])
+                u_tag = " [HÀNG CŨ/DEMO]" if is_u else ""
+                print(f"  • {sku:<30} | {item['price']:,} VND | {'Còn hàng' if in_s else 'HẾT HÀNG'}{u_tag} | {item['url']}")
+            continue
+
+        # Upsert sources
+        source_rows = [
+            {"product_sku": sku, "competitor": COMPETITOR, "url": item["url"], "active": True}
+            for sku, item in matched.items()
+        ]
+        upsert_sources(client, source_rows)
+
+        # Insert price history & update price cache cho SKU MỚI
+        price_rows = []
+        for sku, item in new_items.items():
+            in_s = new_stock.get(item["url"], True)
             is_u = is_old_listing_name(item["name"])
-            u_tag = " [HÀNG CŨ/DEMO]" if is_u else ""
-            print(f"  • {sku:<30} | {item['price']:,} VND | {'Còn hàng' if in_s else 'HẾT HÀNG'}{u_tag} | {item['url']}")
-        return 0
+            price_rows.append({
+                "product_sku": sku,
+                "competitor": COMPETITOR,
+                "price": item["price"],
+                "in_stock": in_s,
+                "is_used": is_u,
+            })
 
-    # Upsert sources
-    source_rows = [
-        {"product_sku": sku, "competitor": COMPETITOR, "url": item["url"], "active": True}
-        for sku, item in matched.items()
-    ]
-    upsert_sources(client, source_rows)
+        if price_rows:
+            insert_prices(client, price_rows)
+            total_inserted += len(price_rows)
+            print(f"✅ Successfully inserted {len(price_rows)} new prices for An Khang ({cat})!")
 
-    # Insert price history & update price cache cho SKU MỚI
-    price_rows = []
-    for sku, item in new_items.items():
-        in_s = new_stock.get(item["url"], True)
-        is_u = is_old_listing_name(item["name"])
-        price_rows.append({
-            "product_sku": sku,
-            "competitor": COMPETITOR,
-            "price": item["price"],
-            "in_stock": in_s,
-            "is_used": is_u,
-        })
-
-    if price_rows:
-        insert_prices(client, price_rows)
-        print(f"✅ Successfully inserted {len(price_rows)} new prices for An Khang!")
-
+    print(f"\n🎉 Finished discovery for An Khang! Total new prices inserted: {total_inserted}")
     return 0
 
 
