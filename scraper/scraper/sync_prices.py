@@ -89,7 +89,7 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-PROXY_COMPETITORS = {"Phong Vũ", "FPT Shop", "Thế Giới Di Động"}
+PROXY_COMPETITORS = {"Phong Vũ", "Thế Giới Di Động"}
 
 GOTO_TIMEOUT_MS = {
     "default": 30000,
@@ -104,7 +104,7 @@ SELECTORS = {
     "Phong Vũ": [".css-1755xpx", ".product-price", ".price-current", "span[class*='price']"],
     "Hà Nội Computer": [".dpro-p-price", ".price-current", ".product-price"],
     "Memoryzone": [".product-price", ".price-current"],
-    "FPT Shop": [".b1-semibold", ".fpt-price", ".price-current"],
+    "FPT Shop": [".l3-semibold", ".h3-semibold", "span[style*='linear-gradient']", ".pc\\:h4-bold", "[class*='text-2xl']", ".b1-semibold", ".fpt-price", ".price-current"],
     "Thế Giới Di Động": [".box-price-present", ".price-current"],
     "Tin Học Ngôi Sao": [".pdPrice span", ".pdPrice", "[itemprop='price']"],
     "Phúc Anh": [".pd-special-price", ".sale-price", ".pd-price", ".p-price2", ".price-current", ".p-price"],
@@ -154,25 +154,67 @@ _FPTSHOP_PRICE_RE = re.compile(r"^[0-9]{1,3}(?:\.[0-9]{3}){1,3}\s*đ?$")
 
 async def _fptshop_price_and_stock(page: Page) -> tuple[int | None, bool | None]:
     """Đọc giá + tín hiệu hết hàng riêng cho FPT Shop. LUÔN cố lấy giá kể cả khi hết hàng — trang
-    không ẩn giá khi hết hàng, chỉ thêm banner "Hàng sắp về". Trả về (price, in_stock):
-      - price: giá VND tìm được (kể cả khi hết hàng), hoặc None nếu không tìm thấy phần tử nào
-        khớp định dạng giá (trang đổi cấu trúc / lỗi tải).
-      - in_stock: False nếu phát hiện banner/tín hiệu hết hàng trên trang; None nếu không có tín
-        hiệu rõ ràng (caller tự suy in_stock từ price > 0 như quy ước chung của hệ thống).
+    không ẩn giá khi hết hàng, hỗ trợ cả Flash Sale / Online Title banner. Trả về (price, in_stock):
+      - price: giá VND tìm được (kể cả khi hết hàng/flash sale), hoặc None nếu không tìm thấy.
+      - in_stock: False nếu phát hiện banner/tín hiệu hết hàng trên trang; None nếu không có tín hiệu.
     """
     price: int | None = None
     try:
-        loc = page.locator('[class*="text-textOnWhitePrimary"]')
-        for i in range(await loc.count()):
-            el = loc.nth(i)
-            cls = await el.get_attribute("class") or ""
-            if "line-through" in cls:   
-                continue
-            txt = (await el.inner_text()).strip()
-            if _FPTSHOP_PRICE_RE.match(txt):
-                p = clean_price(txt)
-                if p:
-                    price = p
+        selectors = [
+            'span[style*="linear-gradient"]',
+            '.l3-semibold',
+            '.h3-semibold',
+            '.pc\\:h4-bold',
+            '[class*="text-2xl"][class*="font-semibold"]',
+            '[class*="text-textOnWhitePrimary"]',
+            '.b1-semibold',
+            '.fpt-price',
+            '.price-current'
+        ]
+
+        # 1. Tìm trong container giá sản phẩm chính / Flash sale trước
+        containers = page.locator('.product-pricing, [class*="pricing-type"], [class*="product-pricing"]')
+        if await containers.count() > 0:
+            for c_idx in range(await containers.count()):
+                c_box = containers.nth(c_idx)
+                for sel in selectors:
+                    loc = c_box.locator(sel)
+                    for i in range(await loc.count()):
+                        el = loc.nth(i)
+                        cls = await el.get_attribute("class") or ""
+                        if "line-through" in cls:
+                            continue
+                        txt = (await el.inner_text()).strip()
+                        if "/tháng" in txt or "tháng" in txt:
+                            continue
+                        if _FPTSHOP_PRICE_RE.match(txt):
+                            p = clean_price(txt)
+                            if p and p > 100000:
+                                price = p
+                                break
+                    if price:
+                        break
+                if price:
+                    break
+
+        # 2. Fallback tìm toàn trang nếu container không khớp
+        if not price:
+            for sel in selectors:
+                loc = page.locator(sel)
+                for i in range(await loc.count()):
+                    el = loc.nth(i)
+                    cls = await el.get_attribute("class") or ""
+                    if "line-through" in cls:
+                        continue
+                    txt = (await el.inner_text()).strip()
+                    if "/tháng" in txt or "tháng" in txt:
+                        continue
+                    if _FPTSHOP_PRICE_RE.match(txt):
+                        p = clean_price(txt)
+                        if p and p > 100000:
+                            price = p
+                            break
+                if price:
                     break
     except Exception:
         pass
