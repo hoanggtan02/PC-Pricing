@@ -89,7 +89,20 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 
-PROXY_COMPETITORS = {"Phong Vũ", "Thế Giới Di Động"}
+# Chỉ bật Proxy Việt Nam cho đúng 4 cửa hàng THỰC SỰ chặn IP nước ngoài (Phúc Anh, FPT Shop, Phong Vũ, Thế Giới Di Động).
+# Các cửa hàng còn lại (Thành Nhân, Memoryzone, Tin Học Ngôi Sao, HACOM, CellphoneS, An Phát, GearVN, An Khang...)
+# sẽ chạy TRỰC TIẾP (Direct) để tiết kiệm chi phí proxy, tăng tốc độ và tránh tốn dung lượng proxy không cần thiết.
+# Hỗ trợ tùy chỉnh qua env var nếu muốn: PROXY_COMPETITORS="Phúc Anh,FPT Shop" hoặc PROXY_ALL=1
+_env_proxy_all = os.getenv("PROXY_ALL", "").strip().lower() in ("1", "true", "yes")
+_env_proxy_comps = os.getenv("PROXY_COMPETITORS", "").strip()
+
+if _env_proxy_all:
+    PROXY_COMPETITORS = set(SELECTORS.keys())
+elif _env_proxy_comps:
+    PROXY_COMPETITORS = {c.strip() for c in _env_proxy_comps.split(",") if c.strip()}
+else:
+    # Chỉ bao gồm đúng 4 shop chặn IP ngoại nghiêm ngặt nhất
+    PROXY_COMPETITORS = {"Phúc Anh", "FPT Shop", "Phong Vũ", "Thế Giới Di Động"}
 
 GOTO_TIMEOUT_MS = {
     "default": 30000,
