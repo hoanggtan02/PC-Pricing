@@ -37,6 +37,7 @@ PER_COMPETITOR_CONCURRENCY = {
     "An Phát PC": 4,
     "Phúc Anh": 1,  # Đặt concurrency = 1 cho Phúc Anh để cào tuần tự, tránh Cloudflare Rate-Limit (HTTP 429)
     "An Khang": 2,  # Đặt concurrency = 2 cho An Khang để tránh Server Disconnect
+    "Wifi.com.vn": 2,  # httpx + Googlebot UA — giới hạn 2 request song song để tránh Server Disconnect
 }
 
 MIN_VALID_PRICE = 500
@@ -121,7 +122,9 @@ SELECTORS = {
     "Thế Giới Di Động": [".box-price-present", ".price-current"],
     "Tin Học Ngôi Sao": [".pdPrice span", ".pdPrice", "[itemprop='price']"],
     "Phúc Anh": [".pd-special-price", ".sale-price", ".pd-price", ".p-price2", ".price-current", ".p-price"],
-    "An Khang": [".pd-table-2021 .pro-price", ".p-detail-right .pro-price", ".pro-price", ".detail-price", ".product-price", ".pd-price", ".giakuyenmai", ".special-price"]
+    "An Khang": [".pd-table-2021 .pro-price", ".p-detail-right .pro-price", ".pro-price", ".detail-price", ".product-price", ".pd-price", ".giakuyenmai", ".special-price"],
+    "Vũ Hoàng Telecom": [".summary .price ins .woocommerce-Price-amount", ".summary .price .woocommerce-Price-amount", ".summary p.price", ".price", ".az-price ins", ".az-price"],
+    "Wifi.com.vn": [".pd-deal-price", ".pd-price", ".p-price", ".price-detail", ".detail-price", ".price"],
 }
 
 _AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued", "preorder", "presale"}
@@ -565,6 +568,126 @@ def _record_failure(
     )
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Adapter httpx riêng cho các site bị Cloudflare Turnstile chặn Playwright
+# (ví dụ: Wifi.com.vn) — dùng Googlebot UA để bypass, không cần browser
+# ──────────────────────────────────────────────────────────────────────────────
+_GOOGLEBOT_UA = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+_HTTPX_COMPETITORS = {"Wifi.com.vn"}  # Các site dùng httpx thay Playwright
+
+_PRICE_PATTERN = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
+
+
+def _extract_price_from_text(text: str | None) -> int | None:
+    """Extract giá VND từ chuỗi text (ví dụ '2.530.000 đ' → 2530000).
+    Lấy số đầu tiên có dạng N.NNN hoặc N,NNN (ít nhất 6 chữ số để loại giá giả).
+    """
+    if not text:
+        return None
+    m = _PRICE_PATTERN.search(text)
+    if not m:
+        return None
+    raw = re.sub(r"[.,]", "", m.group())
+    val = int(raw)
+    return val if val >= MIN_VALID_PRICE else None
+
+
+async def _scrape_httpx_source(
+    competitor: str, sku: str, url: str, client,
+    dry_run: bool, failures: list[dict] | None,
+    results: dict | None = None,
+) -> bool:
+    """Cào giá bằng httpx + BeautifulSoup (không dùng Playwright).
+    Dùng cho các site Cloudflare Turnstile chặn Playwright nhưng cho Googlebot UA qua.
+    """
+    import httpx
+    from bs4 import BeautifulSoup
+
+    try:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": _GOOGLEBOT_UA},
+            timeout=15,
+            follow_redirects=True,
+        ) as hclient:
+            resp = await hclient.get(url)
+
+        if resp.status_code != 200:
+            reason = f"HTTP {resp.status_code}"
+            print(f"  ❌ {competitor} - {sku}: {reason} ({url})")
+            if failures is not None:
+                _record_failure(failures, competitor, sku, url, reason)
+            return False
+
+        html = resp.text
+        # Check challenge page của Cloudflare — KHÔNG dùng _looks_blocked vì regex đó
+        # có "cloudflare" sẽ match nhầm các script GTM/analytics hợp lệ trong html.
+        # Chỉ check: html quá nhỏ (< 5KB) hoặc có dấu hiệu challenge page rõ ràng.
+        is_challenge = (
+            len(html) < 5000 or
+            bool(re.search(r"just a moment|checking your browser|verify you are human|turnstile", html[:3000], re.IGNORECASE))
+        )
+        if is_challenge:
+            reason = f"Trang bị chặn bot/challenge (html={len(html)} ký tự)"
+            print(f"  🔁 {competitor} - {sku}: {reason} ({url})")
+            if failures is not None:
+                _record_failure(failures, competitor, sku, url, reason)
+            return False
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # Lấy giá — thử từng selector theo thứ tự ưu tiên
+        selectors_for = SELECTORS.get(competitor, [])
+        price_text = None
+        for sel in selectors_for:
+            el = soup.select_one(sel)
+            if el:
+                price_text = el.get_text(strip=True)
+                if _extract_price_from_text(price_text) is not None:
+                    break
+
+        price = _extract_price_from_text(price_text)
+
+        # Kiểm tra discontinued
+        body_text = soup.get_text(" ", strip=True)
+        title_tag = soup.find("title")
+        title = title_tag.get_text(strip=True) if title_tag else ""
+        is_discontinued = bool(
+            re.search(DISCONTINUED_PATTERN, title, re.IGNORECASE) or
+            re.search(DISCONTINUED_PATTERN, body_text, re.IGNORECASE)
+        )
+        if is_discontinued:
+            print(f"  [DISCONTINUED] {competitor} - {sku}: đối thủ ngừng kinh doanh, tắt source")
+            if not dry_run:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, deactivate_source, client, sku, competitor)
+                await loop.run_in_executor(None, insert_price, client, sku, competitor, 0, False, False)
+            return True
+
+        in_stock = price is not None and price > 0
+        if price is not None:
+            flag = "" if in_stock else "  [Liên hệ/hết hàng]"
+            print(f"  ✅ {competitor} - {sku}: {price:,} VND{flag}")
+            if results is not None:
+                results["last_price"] = price
+            if not dry_run:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, insert_price, client, sku, competitor, price, in_stock, False)
+            return True
+        else:
+            reason = f"Không tìm thấy giá trên trang (html={len(html)} ký tự)"
+            print(f"  ❌ {competitor} - {sku}: {reason} ({url})")
+            if failures is not None:
+                _record_failure(failures, competitor, sku, url, reason)
+            return False
+
+    except Exception as e:
+        msg = str(e).splitlines()[0][:80]
+        print(f"  ❌ {competitor} - {sku}: Lỗi httpx [{msg}]")
+        if failures is not None:
+            _record_failure(failures, competitor, sku, url, f"[httpx] {msg}")
+        return False
+
+
 async def scrape_source(
     context, source: dict, dry_run: bool, client, proxy: dict | None = None,
     failures: list[dict] | None = None,
@@ -582,6 +705,12 @@ async def scrape_source(
         if failures is not None:
             _record_failure(failures, competitor, sku, url, "URL không hợp lệ")
         return False
+
+    # Các site Cloudflare Turnstile — dùng httpx + Googlebot UA thay vì Playwright
+    if competitor in _HTTPX_COMPETITORS:
+        return await _scrape_httpx_source(
+            competitor, sku, url, client, dry_run, failures, results
+        )
 
     page = await context.new_page()
     # Chặn tài nguyên không cần thiết để tăng tốc

@@ -24,6 +24,8 @@ competitors:
   tinhocngoisao: { search_url: "https://tinhocngoisao.com/search?q={query}" }
   phucanh:    { search_url: "https://www.phucanh.vn/tim?q={query}" }
   ankhang:    { search_url: "https://www.ankhang.vn/tim?q={query}" }
+  vuhoang:    { search_url: "https://vuhoangtelecom.vn/?s={query}&post_type=product" }
+  wificomvn:  { search_url: "https://wifi.com.vn/?s={query}" }
 
 # ── categories ─────────────────────────────────────────────────────────────────────────────────
 categories:
@@ -291,6 +293,8 @@ categories:
       tgdd:    "https://www.thegioididong.com/thiet-bi-mang"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=router&page={page}"
       phucanh: "https://www.phucanh.vn/thiet-bi-mang.html"
+      vuhoang: "https://vuhoangtelecom.vn/bo-phat-song-wifi/"
+      wificomvn: "https://wifi.com.vn/router-wifi-bo-phat-wifi.html"
 
   switch:
     tier: A
@@ -303,6 +307,8 @@ categories:
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=switch+mang"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=switch&page={page}"
       phucanh: "https://www.phucanh.vn/switch-mang.html"
+      vuhoang: "https://vuhoangtelecom.vn/thiet-bi-mang-switch/"
+      wificomvn: "https://wifi.com.vn/switch-bo-chuyen-mach.html"
 
   accesspoint:
     enabled: false   # tắt: gear doanh nghiệp, đối thủ ít bán → ít match
