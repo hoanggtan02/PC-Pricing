@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -247,6 +248,63 @@ def insert_prices(client: Client, rows: list[dict]) -> None:
         client.table("price_history").insert(
             [{"currency": "VND", "is_used": r.get("is_used", False), **r} for r in rows]
         ).execute()
+
+
+# ── Sản phẩm đối thủ mà catalog TNC (`products`) CHƯA CÓ ────────────────────────────────────────
+# Bảng `missing_products` (xem scraper/missing_products.sql) độc lập với sources/price_history —
+# KHÔNG có product_sku thật để tham chiếu (đó chính là lý do bảng này tồn tại: sản phẩm chưa từng
+# được TNC bán nên chưa có SKU nào cho nó). Khóa theo (competitor, url) để mỗi lần cào lại CÙNG một
+# sản phẩm chỉ cập nhật last_seen_at/giá, không tạo dòng trùng.
+
+
+def upsert_missing_products(client: Client, rows: list[dict]) -> None:
+    """Upsert nhiều dòng vào `missing_products` — sản phẩm của một competitor mà catalog TNC chưa
+    có (xem discover_anphat.py). Mỗi row cần có competitor, category, name; brand/price/url/is_used/
+    reason là tùy chọn.
+
+    CHỈ gửi các cột nên được CẬP NHẬT mỗi lần thấy lại (price/name/category/brand/is_used/reason/
+    last_seen_at) — KHÔNG gửi first_seen_at/resolved/resolved_at. PostgREST upsert chỉ áp DEFAULT
+    cho các cột vắng mặt lúc INSERT LẦN ĐẦU; khi gặp xung đột (đã có dòng), các cột không được gửi
+    giữ nguyên giá trị cũ — nhờ vậy first_seen_at không bị ghi đè và một dòng đã resolved=true
+    không bị vô tình mở lại chỉ vì item xuất hiện lại trong một lượt cào khác.
+    """
+    if not rows:
+        return
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload = []
+    for r in rows:
+        payload.append({
+            "competitor": r["competitor"],
+            "category": r["category"],
+            "brand": r.get("brand") or None,
+            "name": r["name"],
+            "price": r.get("price"),
+            "url": r.get("url") or "",
+            "is_used": bool(r.get("is_used", False)),
+            "reason": r.get("reason") or "",
+            "last_seen_at": now_iso,
+        })
+    payload = _dedupe(payload, lambda r: (r["competitor"], r["url"]))
+    client.table("missing_products").upsert(payload, on_conflict="competitor,url").execute()
+
+
+def resolve_missing_products(client: Client, competitor: str, urls: list[str]) -> None:
+    """Đánh dấu các dòng `missing_products` của `competitor` khớp `urls` là ĐÃ GIẢI QUYẾT
+    (resolved=true, resolved_at=now()) — gọi khi một item TRƯỚC ĐÂY không khớp catalog TNC nay
+    ĐÃ khớp (TNC vừa bổ sung đúng sản phẩm đó). KHÔNG xóa dòng — giữ lại lịch sử "đã từng thiếu".
+    Chỉ update các dòng đang resolved=false (tránh ghi đè resolved_at nếu đã resolved từ trước).
+    """
+    urls = [u for u in urls if u]
+    if not urls:
+        return
+    now_iso = datetime.now(timezone.utc).isoformat()
+    CHUNK = 200
+    for i in range(0, len(urls), CHUNK):
+        chunk = urls[i : i + CHUNK]
+        client.table("missing_products").update(
+            {"resolved": True, "resolved_at": now_iso}
+        ).eq("competitor", competitor).eq("resolved", False).in_("url", chunk).execute()
+
 
 def fetch_all_sources(
     client: Client, competitor: str | None = None, category: str | None = None
