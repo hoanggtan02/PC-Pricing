@@ -1,0 +1,102 @@
+name: Daily missing-products stock check (Mode C)
+# ─────────────────────────────────────────────────────────────────────────────
+# Mode C: Cào lại giá + tồn kho cho các link trong bảng `missing_products`
+# (sản phẩm đối thủ có bán nhưng catalog TNC chưa có SKU khớp — xem
+# scraper/scraper/check_missing_stock.py và discover_anphat.py).
+#
+# Chạy MỖI NGÀY, tách RIÊNG khỏi scrape.yml (Mode A, cuối tuần) và sync.yml
+# (Mode B, 4 lần/ngày) để không dồn thêm tải lên cùng khung giờ với hai job đó —
+# script này thường chạy SAU khi Mode A/B đã có lượt gần nhất trong ngày.
+#
+# Một job DUY NHẤT (không matrix theo cửa hàng): check_missing_stock.py tự quản lý
+# concurrency nội bộ (CONCURRENCY_LIMIT=4, xem file) và tự route qua proxy VN cho
+# đúng các cửa hàng cần (Phúc Anh/FPT Shop/Phong Vũ/TGĐĐ) hay httpx cho Wifi.com.vn.
+#
+# Các fix apt/IPv4 + cache Playwright giữ ĐỒNG BỘ với scrape.yml/sync.yml (cùng vấn đề
+# treo lúc "playwright install --with-deps" trên GitHub-hosted runner).
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    # 05:00 VN (22:00 UTC) — sau khi sync.yml (chạy 0/6/12/18h UTC) đã có lượt gần nhất.
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Chạy thử (không ghi vào DB)"
+        type: boolean
+        default: false
+      competitor:
+        description: "Chỉ kiểm tra MỘT cửa hàng (để trống = tất cả)"
+        type: string
+        default: ""
+      limit:
+        description: "Giới hạn số sản phẩm kiểm tra (để trống = không giới hạn)"
+        type: string
+        default: ""
+
+# Chỉ một lượt chạy tại một thời điểm (tránh đụng Supabase / proxy pool với chính nó).
+concurrency:
+  group: daily-missing-stock-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Chốt an toàn thấp hơn trần cứng 360'/job của GitHub-hosted runner.
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('scraper/requirements.txt') }}
+
+      # Cùng fix treo apt như scrape.yml/sync.yml — xem ghi chú ở hai file đó.
+      - name: Force apt to use IPv4 (fix hanging on archive.ubuntu.com)
+        run: |
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::Retries "3";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::http::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+          echo 'Acquire::https::Timeout "15";' | sudo tee -a /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: Install dependencies
+        timeout-minutes: 30
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Check missing_products stock
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          PROXY_LIST: ${{ secrets.PROXY_LIST }}
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+        run: |
+          echo "::group::Mode C - check_missing_stock"
+          ARGS=()
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS+=(--dry)
+          fi
+          if [ -n "${{ inputs.competitor }}" ]; then
+            ARGS+=(--competitor "${{ inputs.competitor }}")
+          fi
+          if [ -n "${{ inputs.limit }}" ]; then
+            ARGS+=(--limit "${{ inputs.limit }}")
+          fi
+          python -m scraper.check_missing_stock "${ARGS[@]}"
+          echo "::endgroup::"
