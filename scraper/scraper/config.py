@@ -85,17 +85,25 @@ def resolve_url(competitor: str, category: str) -> str | None:
     `competitor` là key cấu hình ngắn gọn (ví dụ: 'hacom', 'tnc'). Các site có ô tìm kiếm sẽ được
     điền template bằng search_term của category; TNC và các site có đường dẫn theo category sẽ
     dùng URL tường minh của chúng.
+
+    LƯU Ý: nếu `paths.<competitor>` của category này là một DANH SÁCH (nhiều trang danh mục gộp
+    lại — xem resolve_urls() bên dưới), hàm này chỉ trả về PHẦN TỬ ĐẦU TIÊN để không phá vỡ các
+    call site cũ vốn chỉ xử lý một URL. Những nơi cần TOÀN BỘ danh sách (ví dụ An Phát, nơi một
+    category có thể cần gộp 2+ trang) phải gọi resolve_urls() thay vì resolve_url().
     """
     cfg = _config()
     cat = category_meta(category)
 
     if competitor == "tnc":
-        return cat.get("tnc")
+        val = cat.get("tnc")
+        if not val:
+            return None
+        return val if isinstance(val, str) else (val[0] if val else None)
 
     # site có đường dẫn theo category với URL tường minh?
     path = (cat.get("paths") or {}).get(competitor)
     if path:
-        return path
+        return path if isinstance(path, str) else (path[0] if path else None)
 
     # site có ô tìm kiếm: điền search term của category vào template
     search_url = (cfg.get("competitors") or {}).get(competitor, {}).get("search_url")
@@ -104,3 +112,30 @@ def resolve_url(competitor: str, category: str) -> str | None:
         return search_url.replace("{query}", quote_plus(term))
 
     return None
+
+
+def resolve_urls(competitor: str, category: str) -> list[str]:
+    """Giống resolve_url(), nhưng LUÔN trả về một DANH SÁCH URL (list rỗng nếu chưa cấu hình).
+
+    Dùng khi một category của `competitor` cần gộp NHIỀU trang danh mục thật — ví dụ An Phát chia
+    nhỏ hơn TNC (router = trang "bộ phát sóng không dây" + trang "router wifi 4G" riêng biệt).
+    `paths.<competitor>` trong sources.yaml có thể là MỘT chuỗi hoặc MỘT danh sách chuỗi, giống hệt
+    cách `tnc:` đã hỗ trợ danh sách từ trước (xem tnc_urls()). resolve_url() (số ít) vẫn giữ nguyên
+    hành vi cũ (chỉ trả phần tử đầu) để không phá các call site hiện có.
+    """
+    cfg = _config()
+    cat = category_meta(category)
+
+    if competitor == "tnc":
+        return tnc_urls(category)
+
+    path = (cat.get("paths") or {}).get(competitor)
+    if path:
+        return [path] if isinstance(path, str) else list(path)
+
+    search_url = (cfg.get("competitors") or {}).get(competitor, {}).get("search_url")
+    if search_url:
+        term = cat.get("search_term", "").strip()
+        return [search_url.replace("{query}", quote_plus(term))]
+
+    return []

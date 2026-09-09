@@ -1,32 +1,3 @@
-# Scraper source registry — the retailer-editable list of where to find prices, by CATEGORY.
-# Category-driven model: one scrape per category (no per-brand loop). Each product's brand is
-# derived from its name (see config/brands.yaml); matching is by SKU.
-#
-# Competitor URL styles:
-#   * search-box sites   -> one `search_url` template each (below), filled with {query} = the
-#       category's `search_term` (e.g. "man hinh"). One fetch returns all brands.
-#   * category-path sites -> a `path` URL per (category, competitor) under the category, because
-#       they have no clean search box.
-# TNC (our own store, the catalog driver) uses the category's `tnc` URL.
-
-# ── search-box competitors: one template each, {query} = category search_term ────────────────────
-competitors:
-  hacom:      { search_url: "https://hacom.vn/tim?q={query}" }
-  cellphones: { search_url: "https://cellphones.com.vn/catalogsearch/result?q={query}" }
-  anphat:     { search_url: "https://www.anphatpc.com.vn/tim?scat_id=&q={query}" }
-  memoryzone: { search_url: "https://memoryzone.com.vn/search?query={query}" }
-  gearvn:     { search_url: "https://gearvn.com/search?q={query}" }
-  # fptshop / phongvu: search_url ở đây là DỰ PHÒNG — `paths` bên dưới vẫn ưu tiên (đầy đủ hơn); danh
-  # mục chưa có path thì rơi xuống search thay vì trả None. tgdd CỐ Ý không có search fallback (tìm linh
-  # kiện trả về laptop/điện thoại). Chi tiết + số liệu: docs/competitor-category-navigation.md, docs/proxy.md.
-  fptshop:    { search_url: "https://fptshop.com.vn/tim-kiem?s={query}" }
-  phongvu:    { search_url: "https://phongvu.vn/search?router=productListing&query={query}" }
-  tinhocngoisao: { search_url: "https://tinhocngoisao.com/search?q={query}" }
-  phucanh:    { search_url: "https://www.phucanh.vn/tim?q={query}" }
-  ankhang:    { search_url: "https://www.ankhang.vn/tim?q={query}" }
-  vuhoang:    { search_url: "https://vuhoangtelecom.vn/?s={query}&post_type=product" }
-  wificomvn:  { search_url: "https://wifi.com.vn/?s={query}" }
-
 # ── categories ─────────────────────────────────────────────────────────────────────────────────
 categories:
   monitor:
@@ -41,6 +12,9 @@ categories:
       tgdd:    "https://www.thegioididong.com/man-hinh-may-tinh"
       fptshop: "https://fptshop.com.vn/man-hinh"
       phucanh: "https://www.phucanh.vn/man-hinh-may-tinh.html"
+      # An Phát: trang tổng "màn hình máy tính" (không phải trang tìm kiếm) — sitemap ghi đuôi
+      # "-1" (biến thể slug của chính site An Phát), vẫn là trang thật, KHÔNG phải lỗi gõ.
+      anphat:  "https://www.anphatpc.com.vn/man-hinh-may-tinh.html-1"
 
   cpu:
     tier: A
@@ -57,6 +31,7 @@ categories:
       fptshop: "https://fptshop.com.vn/linh-kien/cpu"
       gearvn:  "https://gearvn.com/collections/cpu-bo-vi-xu-ly"
       phucanh: "https://www.phucanh.vn/bo-vi-xu-ly.html"
+      anphat:  "https://www.anphatpc.com.vn/cpu-bo-vi-xu-ly.html"
 
   # ── VGA / Card màn hình (BRAND-GPU-DÒNG-MEM; dùng vga_sku) ──
   vga:
@@ -76,6 +51,7 @@ categories:
       fptshop: "https://fptshop.com.vn/linh-kien/card-man-hinh"
       gearvn:  "https://gearvn.com/collections/vga-card-man-hinh"
       phucanh: "https://www.phucanh.vn/card-man-hinh.html"
+      anphat:  "https://www.anphatpc.com.vn/vga-card-man-hinh.html"
 
   # ── Mainboard / Bo mạch chủ (BRAND-CHIPSET-MODEL-MEMGEN; dùng mainboard_sku) ──
   mainboard:
@@ -90,6 +66,7 @@ categories:
       fptshop: "https://fptshop.com.vn/linh-kien/mainboard"
       gearvn:  "https://gearvn.com/collections/mainboard-bo-mach-chu"
       phucanh: "https://www.phucanh.vn/bo-mach-chu.html"
+      anphat:  "https://www.anphatpc.com.vn/bo-mach-chu.html"
 
   # ── Thiết bị văn phòng / gia dụng (BRAND + mã model; dùng chung av_sku) ──
   printer:
@@ -102,6 +79,7 @@ categories:
       tgdd: "https://www.thegioididong.com/may-in"
       phongvu: "https://phongvu.vn/c/may-in"
       phucanh: "https://www.phucanh.vn/may-in.html"
+      anphat: "https://www.anphatpc.com.vn/may-in.html"
   scanner:
     tier: A
     search_term: "máy scan"
@@ -111,6 +89,7 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/c/may-scan"
       phucanh: "https://www.phucanh.vn/may-quet-may-scan.html"
+      anphat: "https://www.anphatpc.com.vn/may-quet-scaner_dm1108.html"
   ups:
     tier: A
     search_term: "bộ lưu điện ups"
@@ -120,6 +99,7 @@ categories:
     paths:
       tgdd: "https://www.thegioididong.com/bo-luu-dien"
       phucanh: "https://www.phucanh.vn/bo-luu-dien.html"
+      anphat: "https://www.anphatpc.com.vn/bo-luu-dien-ups_dm1105.html"
 
   projector:
     tier: A
@@ -130,6 +110,9 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/c/thiet-bi-trinh-chieu"
       phucanh: "https://www.phucanh.vn/may-chieu.html"
+      anphat:
+        - "https://www.anphatpc.com.vn/may-chieu_dm1037.html"
+        - "https://www.anphatpc.com.vn/may-chieu_dm1422.html"
   tv:
     tier: A
     search_term: "tivi"
@@ -140,6 +123,7 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/c/tivi"
       fptshop: "https://fptshop.com.vn/tivi"
+      anphat: "https://www.anphatpc.com.vn/Tivi_dm1264.html"
 
   tablet:
     tier: A
@@ -152,6 +136,7 @@ categories:
       fptshop: "https://fptshop.com.vn/may-tinh-bang"
       tgdd: "https://www.thegioididong.com/may-tinh-bang"
       phucanh: "https://www.phucanh.vn/may-tinh-bang.html"
+      anphat: "https://www.anphatpc.com.vn/may-tinh-bang_dm1126.html"
   ram:
     tier: A
     # A/B đo trên 5 site search-box (2026-07-23): "ram" THẮNG "ram pc" rõ rệt, 49 → 76 khớp (+55%).
@@ -171,6 +156,9 @@ categories:
       phongvu: "https://phongvu.vn/c/ram"
       fptshop: "https://fptshop.com.vn/linh-kien/ram"
       phucanh: "https://www.phucanh.vn/bo-nho-trong-linh-kien-pc.html"
+      # Trang danh mục "bộ nhớ trong" của An Phát gộp cả RAM desktop lẫn laptop; name_exclude ở
+      # trên đã loại "ram laptop"/"sodimm" nên vẫn lọc đúng ra RAM desktop.
+      anphat: "https://www.anphatpc.com.vn/bo-nho-trong_dm1023.html"
 
   ssd:
     tier: A
@@ -182,6 +170,7 @@ categories:
       phongvu: "https://phongvu.vn/c/o-cung-ssd"
       fptshop: "https://fptshop.com.vn/linh-kien/o-cung"
       phucanh: "https://www.phucanh.vn/o-cung-the-ran-ssd.html"
+      anphat: "https://www.anphatpc.com.vn/o-cung-ssd_dm1030.html"
 
   hdd:
     tier: A
@@ -193,6 +182,9 @@ categories:
       phongvu: "https://phongvu.vn/c/o-cung-hdd"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=hdd&categories=o-cung-hdd&page={page}"
       phucanh: "https://www.phucanh.vn/o-cung-hdd.html"
+      # An Phát KHÔNG có trang HDD riêng biệt (chỉ có trang gộp "ổ cứng HDD/SSD") — name_match
+      # "hdd" + name_exclude "ssd" ở trên tự lọc đúng ra HDD từ trang gộp này.
+      anphat: "https://www.anphatpc.com.vn/o-cung-hdd-ssd_dm1314.html"
 
   # ── Phụ kiện linh-phu-kien (Tier A: bàn phím/chuột/webcam/USB/box đều có mã model in giống nhau) ──
   keyboard:
@@ -207,6 +199,7 @@ categories:
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=ban+phim"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=ban+phim&categories=ban-phim&page={page}"
       phucanh: "https://www.phucanh.vn/gaming-keyboard.html"
+      anphat:  "https://www.anphatpc.com.vn/ban-phim-may-tinh_dm1027.html"
 
   mouse:
     # enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -220,6 +213,7 @@ categories:
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=chuot+may+tinh"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=chuot&categories=chuot&page={page}"
       phucanh: "https://www.phucanh.vn/chuot-gaming.html"
+      anphat:  "https://www.anphatpc.com.vn/chuot-may-tinh_dm1291.html"
 
   combo:
     enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -232,6 +226,7 @@ categories:
       phongvu: "https://phongvu.vn/search?router=productListing&query=combo-phim-chuot"
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=combo+phim+chuot"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=combo+phim+chuot&page={page}"
+      anphat:  "https://www.anphatpc.com.vn/bo-ban-phim-chuot_dm1292.html"
 
   webcam:
     enabled: false   # tắt: ít giá trị, ưu tiên tốc độ scraper
@@ -244,6 +239,7 @@ categories:
       phongvu: "https://phongvu.vn/search?router=productListing&query=webcam"
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=webcam"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=webcam&categories=webcam&page={page}"
+      anphat:  "https://www.anphatpc.com.vn/webcam_dm1181.html"
 
   usb:
     enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -256,6 +252,7 @@ categories:
       phongvu: "https://phongvu.vn/search?router=productListing&query=usb"
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=usb+flash"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=usb&categories=usb&page={page}"
+      anphat:  "https://www.anphatpc.com.vn/o-usb-flash_dm1014.html"
 
   memcard:
     tier: A
@@ -266,6 +263,7 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/search?router=productListing&query=the-nho"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=the+nho&categories=the-nho&page={page}"
+      anphat:  "https://www.anphatpc.com.vn/the-nho-sd-card_dm1286.html"
 
   box:
     tier: A
@@ -276,6 +274,9 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/search?router=productListing&query=box-o-cung"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=box+o+cung&page={page}"
+      anphat:
+        - "https://www.anphatpc.com.vn/hop-box-o-cung_dm1238.html"
+        - "https://www.anphatpc.com.vn/hop-dung-o-cung-hdd-box.html"
 
   # ── Thiết bị mạng (Tier A: router/switch/AP đều có mã model in giống nhau mọi cửa hàng) ──
   # Router (gộp: wifi gia đình + doanh nghiệp) — một search_term "router" phủ cả hai bên đối thủ;
@@ -295,6 +296,11 @@ categories:
       phucanh: "https://www.phucanh.vn/thiet-bi-mang.html"
       vuhoang: "https://vuhoangtelecom.vn/bo-phat-song-wifi/"
       wificomvn: "https://wifi.com.vn/router-wifi-bo-phat-wifi.html"
+      # An Phát chia nhỏ hơn TNC: trang "bộ phát sóng không dây" (wifi gia đình/doanh nghiệp) +
+      # trang riêng "router/bộ phát wifi 4G" — gộp cả hai để không bỏ sót router 4G.
+      anphat:
+        - "https://www.anphatpc.com.vn/bo-phat-song-khong-day_dm1109.html"
+        - "https://www.anphatpc.com.vn/router-bo-phat-wifi-4g.html"
 
   switch:
     tier: A
@@ -309,6 +315,7 @@ categories:
       phucanh: "https://www.phucanh.vn/switch-mang.html"
       vuhoang: "https://vuhoangtelecom.vn/thiet-bi-mang-switch/"
       wificomvn: "https://wifi.com.vn/switch-bo-chuyen-mach.html"
+      anphat:  "https://www.anphatpc.com.vn/switch_dm1036.html"
 
   accesspoint:
     enabled: false   # tắt: gear doanh nghiệp, đối thủ ít bán → ít match
@@ -357,6 +364,7 @@ categories:
       fptshop: "https://fptshop.com.vn/tim-kiem?s=may+tinh+de+ban&sort=noi-bat&categories=may-tinh-de-ban&page={page}"
       tgdd: "https://www.thegioididong.com/may-tinh-de-ban"
       phucanh: "https://www.phucanh.vn/may-tinh-de-ban.html"
+      anphat: "https://www.anphatpc.com.vn/may-tinh-dong-bo.html"
   # ── Máy trạm (Workstation) — branded (Dell Precision, HP Z, Lenovo ThinkStation) có mã model ──
   workstation:
     tier: A
@@ -368,6 +376,7 @@ categories:
       phongvu: "https://phongvu.vn/search?router=productListing&query=workstation"
       fptshop: "https://fptshop.com.vn/tim-kiem?s=workstation&page={page}"
       phucanh: "https://www.phucanh.vn/may-tram-workstation.html"
+      anphat: "https://www.anphatpc.com.vn/may-tinh-workstation-may-tram_dm1469.html"
 
   # ── Máy chủ (Server) — branded (Dell PowerEdge, HPE ProLiant, Lenovo ThinkSystem) có mã model ──
   server:
@@ -379,6 +388,7 @@ categories:
     paths:
       phongvu: "https://phongvu.vn/c/may-chu-server"
       fptshop: "https://fptshop.com.vn/tim-kiem?s=server&page={page}"
+      anphat: "https://www.anphatpc.com.vn/may-chu_dm1018.html"
 
   # ── Phần mềm bản quyền (Windows/Office, diệt virus, đồ họa...) — dùng software_sku ──
   # Không có mã part như phần cứng: định danh = tên sản phẩm + số thiết bị + thời hạn (Kaspersky
@@ -413,6 +423,9 @@ categories:
       tgdd:    "https://www.thegioididong.com/camera-giam-sat"
       fptshop: "https://fptshop.com.vn/tim-kiem?s=camera&categories=camera&page={page}"
       phucanh: "https://www.phucanh.vn/camera-giam-sat.html"
+      anphat:
+        - "https://www.anphatpc.com.vn/camera_dm1216.html"
+        - "https://www.anphatpc.com.vn/camera-quan-sat.html"
 
   # ── Thiết bị âm thanh: tai nghe, loa, micro (BRAND + model) ──
   audio:
@@ -427,3 +440,6 @@ categories:
       tgdd:    "https://www.thegioididong.com/tai-nghe-nhung"
       phucanh: "https://www.phucanh.vn/tainghe.html"
       fptshop: "https://fptshop.com.vn/tai-nghe"
+      anphat:
+        - "https://www.anphatpc.com.vn/tai-nghe_dm1180.html"
+        - "https://www.anphatpc.com.vn/loa.html"
