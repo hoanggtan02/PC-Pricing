@@ -38,6 +38,7 @@ import argparse
 import asyncio
 import re
 import sys
+from argparse import Namespace
 
 from playwright.async_api import async_playwright
 from playwright.sync_api import sync_playwright

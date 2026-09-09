@@ -267,6 +267,12 @@ def upsert_missing_products(client: Client, rows: list[dict]) -> None:
     cho các cột vắng mặt lúc INSERT LẦN ĐẦU; khi gặp xung đột (đã có dòng), các cột không được gửi
     giữ nguyên giá trị cũ — nhờ vậy first_seen_at không bị ghi đè và một dòng đã resolved=true
     không bị vô tình mở lại chỉ vì item xuất hiện lại trong một lượt cào khác.
+
+    LƯU Ý: cũng KHÔNG gửi `in_stock`/`stock_checked_at` vì cùng lý do — hai cột đó CHỈ do
+    check_missing_stock.py (Mode C, xem update_missing_product_stock() bên dưới) ghi. Nếu gửi
+    `in_stock` ở đây, mỗi lần discover_anphat.py chạy lại (cuối tuần) sẽ ghi đè mất trạng thái
+    "hết hàng" mà Mode C vừa xác nhận, làm sản phẩm đã hết hàng bên đối thủ lại hiện ra ở giao
+    diện (view missing_products_available — xem missing_products_stock.sql) một cách sai lệch.
     """
     if not rows:
         return
@@ -304,6 +310,60 @@ def resolve_missing_products(client: Client, competitor: str, urls: list[str]) -
         client.table("missing_products").update(
             {"resolved": True, "resolved_at": now_iso}
         ).eq("competitor", competitor).eq("resolved", False).in_("url", chunk).execute()
+
+
+def fetch_missing_products(
+    client: Client, competitor: str | None = None, include_resolved: bool = False
+) -> list[dict]:
+    """Đọc các dòng `missing_products` cần kiểm tra tồn kho — dùng cho check_missing_stock.py
+    (Mode C).
+
+    Mặc định CHỈ lấy resolved=false: một dòng đã resolved=true nghĩa là TNC đã bổ sung đúng SKU
+    đó vào catalog rồi, nó không còn là "sản phẩm thiếu" nữa — kiểm tồn kho cho nó là lãng phí một
+    lượt tải trang vô ích. Truyền `competitor` để chỉ kiểm tra MỘT cửa hàng (chạy song song theo
+    từng cửa hàng nếu muốn, giống pattern của fetch_active_sources()).
+    """
+    rows: list[dict] = []
+    page, size = 0, 1000
+    while True:
+        q = client.table("missing_products").select(
+            "competitor, category, brand, name, price, url, is_used, reason, in_stock, resolved"
+        )
+        if not include_resolved:
+            q = q.eq("resolved", False)
+        if competitor:
+            q = q.eq("competitor", competitor)
+        batch = q.range(page * size, page * size + size - 1).execute().data or []
+        rows.extend(batch)
+        if len(batch) < size:
+            break
+        page += 1
+    return rows
+
+
+def update_missing_product_stock(
+    client: Client, competitor: str, url: str, in_stock: bool, price: int | None = None
+) -> None:
+    """Ghi lại tồn kho HIỆN TẠI (+ giá mới nếu đọc được) cho một dòng `missing_products`, khóa
+    theo (competitor, url). `stock_checked_at` luôn được cập nhật (kể cả khi in_stock không đổi)
+    để biết dữ liệu tồn kho này mới tới mức nào.
+
+    ĐÂY LÀ NƠI DUY NHẤT được phép ghi cột `in_stock`/`stock_checked_at` của `missing_products` —
+    xem ghi chú ở upsert_missing_products() vì sao discover_anphat.py không được đụng vào hai cột
+    này. View `missing_products_available` (missing_products_stock.sql) lọc theo đúng
+    `in_stock = true` — một khi dòng này được set `in_stock=False`, nó tự động biến mất khỏi giao
+    diện mà không cần sửa gì ở tầng hiển thị.
+
+    Chỉ cập nhật `price` khi có giá mới HỢP LỆ (>0) — tránh ghi đè giá cũ hợp lệ bằng None/0 khi
+    lần cào này chỉ đọc được tín hiệu tồn kho mà không đọc được giá (ví dụ trang đổi cấu trúc).
+    """
+    payload: dict = {
+        "in_stock": in_stock,
+        "stock_checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if price is not None and price > 0:
+        payload["price"] = price
+    client.table("missing_products").update(payload).eq("competitor", competitor).eq("url", url).execute()
 
 
 def fetch_all_sources(
