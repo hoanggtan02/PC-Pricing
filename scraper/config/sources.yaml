@@ -15,6 +15,9 @@ categories:
       # An Phát: trang tổng "màn hình máy tính" (không phải trang tìm kiếm) — sitemap ghi đuôi
       # "-1" (biến thể slug của chính site An Phát), vẫn là trang thật, KHÔNG phải lỗi gõ.
       anphat:  "https://www.anphatpc.com.vn/man-hinh-may-tinh.html-1"
+      # GearVN: trang danh mục tổng "Màn Hình Máy Tính" (đã xác minh 2026-09, có card sản phẩm
+      # thật). Không dùng /tim-kiem — trang category sạch hơn nhiều so với search.
+      gearvn:  "https://gearvn.com/collections/man-hinh"
 
   cpu:
     tier: A
@@ -100,6 +103,10 @@ categories:
       tgdd: "https://www.thegioididong.com/bo-luu-dien"
       phucanh: "https://www.phucanh.vn/bo-luu-dien.html"
       anphat: "https://www.anphatpc.com.vn/bo-luu-dien-ups_dm1105.html"
+      # GearVN: trang danh mục UPS thật (đã xác minh 2026-09 — tiêu đề meta của trang bị lệch
+      # thành "PSU - Nguồn máy tính" nhưng NỘI DUNG sản phẩm đúng là UPS: ARES AR610/AR620/AR630,
+      # DELTA VX-1000VA...). Không dùng làm dấu hiệu nghi ngờ — đã xem trực tiếp card sản phẩm.
+      gearvn: "https://gearvn.com/collections/bo-luu-dien-ups"
 
   projector:
     tier: A
@@ -159,6 +166,9 @@ categories:
       # Trang danh mục "bộ nhớ trong" của An Phát gộp cả RAM desktop lẫn laptop; name_exclude ở
       # trên đã loại "ram laptop"/"sodimm" nên vẫn lọc đúng ra RAM desktop.
       anphat: "https://www.anphatpc.com.vn/bo-nho-trong_dm1023.html"
+      # GearVN: "RAM PC - RAM máy tính" — trang RAM DESKTOP (KHÔNG phải "ram-laptop", trang đó là
+      # RAM SODIMM khác sản phẩm). Đã xác minh 2026-09.
+      gearvn: "https://gearvn.com/collections/ram-pc"
 
   ssd:
     tier: A
@@ -171,6 +181,9 @@ categories:
       fptshop: "https://fptshop.com.vn/linh-kien/o-cung"
       phucanh: "https://www.phucanh.vn/o-cung-the-ran-ssd.html"
       anphat: "https://www.anphatpc.com.vn/o-cung-ssd_dm1030.html"
+      # GearVN: trang gộp "SSD - Ổ cứng thể rắn" (đã xác minh 2026-09, có bộ lọc hãng
+      # Samsung/WD/Kingston/Corsair/PNY bên trong — đúng là trang danh mục SSD desktop tổng).
+      gearvn: "https://gearvn.com/collections/ssd-o-cung-the-ran"
 
   hdd:
     tier: A
@@ -200,6 +213,8 @@ categories:
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=ban+phim&categories=ban-phim&page={page}"
       phucanh: "https://www.phucanh.vn/gaming-keyboard.html"
       anphat:  "https://www.anphatpc.com.vn/ban-phim-may-tinh_dm1027.html"
+      # GearVN: "Bàn phím máy tính" (trang tổng, đã xác minh 2026-09).
+      gearvn:  "https://gearvn.com/collections/ban-phim-may-tinh"
 
   mouse:
     # enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -214,6 +229,8 @@ categories:
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=chuot&categories=chuot&page={page}"
       phucanh: "https://www.phucanh.vn/chuot-gaming.html"
       anphat:  "https://www.anphatpc.com.vn/chuot-may-tinh_dm1291.html"
+      # GearVN: "Chuột máy tính - Chuột Gaming" (trang tổng, đã xác minh 2026-09).
+      gearvn:  "https://gearvn.com/collections/chuot-may-tinh"
 
   combo:
     enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -240,6 +257,8 @@ categories:
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=webcam"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=webcam&categories=webcam&page={page}"
       anphat:  "https://www.anphatpc.com.vn/webcam_dm1181.html"
+      # GearVN: "Webcam PC, Laptop" (trang tổng, đã xác minh 2026-09).
+      gearvn:  "https://gearvn.com/collections/webcam"
 
   usb:
     enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -264,6 +283,9 @@ categories:
       phongvu: "https://phongvu.vn/search?router=productListing&query=the-nho"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=the+nho&categories=the-nho&page={page}"
       anphat:  "https://www.anphatpc.com.vn/the-nho-sd-card_dm1286.html"
+      # GearVN: "Thẻ nhớ" (trang tổng, đã xác minh 2026-09 qua điều hướng chính của site — nằm
+      # trong mục "Ổ cứng, RAM, Thẻ nhớ").
+      gearvn:  "https://gearvn.com/collections/the-nho"
 
   box:
     tier: A
@@ -301,6 +323,10 @@ categories:
       anphat:
         - "https://www.anphatpc.com.vn/bo-phat-song-khong-day_dm1109.html"
         - "https://www.anphatpc.com.vn/router-bo-phat-wifi-4g.html"
+      # GearVN: "Router Wi-Fi" — trang danh mục thiết bị phát wifi thật (đã xác minh 2026-09, nằm
+      # trong mục điều hướng "Phần mềm, mạng"). GearVN KHÔNG có switch/access point riêng biệt
+      # nên chỉ router được thêm ở đây.
+      gearvn: "https://gearvn.com/collections/thiet-bi-phat-wifi"
 
   switch:
     tier: A
@@ -365,6 +391,10 @@ categories:
       tgdd: "https://www.thegioididong.com/may-tinh-de-ban"
       phucanh: "https://www.phucanh.vn/may-tinh-de-ban.html"
       anphat: "https://www.anphatpc.com.vn/may-tinh-dong-bo.html"
+      # LƯU Ý: KHÔNG thêm GearVN ở đây. GearVN chỉ bán PC tự build theo cấu hình ("PC GVN" — đặt
+      # tên theo CPU/VGA, không có mã model thương hiệu), khác hẳn PC thương hiệu (Dell/HP/Lenovo/
+      # Asus nguyên bộ) mà TNC/pc.tnc bán. derive_sku() (pc_sku) sẽ không bao giờ khớp được hai bên
+      # — thêm vào chỉ tạo rác trong missing_products, không tạo được khớp giá nào.
   # ── Máy trạm (Workstation) — branded (Dell Precision, HP Z, Lenovo ThinkStation) có mã model ──
   workstation:
     tier: A
@@ -443,3 +473,10 @@ categories:
       anphat:
         - "https://www.anphatpc.com.vn/tai-nghe_dm1180.html"
         - "https://www.anphatpc.com.vn/loa.html"
+      # GearVN: gộp CẢ BA trang danh mục — tai nghe, loa, microphone (đã xác minh 2026-09 qua
+      # điều hướng chính "Loa, Micro, Webcam") — category `audio` của TNC cũng gộp cả ba loại
+      # này (xem name_match ở trên: tai nghe|loa|micro), nên gộp tương tự phía GearVN cho khớp.
+      gearvn:
+        - "https://gearvn.com/collections/tai-nghe-may-tinh"
+        - "https://gearvn.com/collections/loa"
+        - "https://gearvn.com/collections/microphone"
