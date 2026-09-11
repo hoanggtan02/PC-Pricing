@@ -18,6 +18,9 @@ categories:
       # GearVN: trang danh mục tổng "Màn Hình Máy Tính" (đã xác minh 2026-09, có card sản phẩm
       # thật). Không dùng /tim-kiem — trang category sạch hơn nhiều so với search.
       gearvn:  "https://gearvn.com/collections/man-hinh"
+      # Memoryzone: trang tổng "Màn hình - Loa" -> /man-hinh (mọi hãng, mọi loại màn hình desktop).
+      # KHÔNG dùng /man-hinh-gaming hay /man-hinh-van-phong riêng lẻ vì sẽ bỏ sót phần còn lại.
+      memoryzone: "https://memoryzone.com.vn/man-hinh"
 
   cpu:
     tier: A
@@ -35,6 +38,10 @@ categories:
       gearvn:  "https://gearvn.com/collections/cpu-bo-vi-xu-ly"
       phucanh: "https://www.phucanh.vn/bo-vi-xu-ly.html"
       anphat:  "https://www.anphatpc.com.vn/cpu-bo-vi-xu-ly.html"
+      # Memoryzone: trang tổng CPU rời cho PC — https://memoryzone.com.vn/cpu-may-tinh (KHÔNG
+      # dùng các link "laptop-cpu-i5"/"laptop-cpu-ryzen-5" trong menu: đó là bộ LỌC LAPTOP theo
+      # CPU, không phải trang bán CPU rời — dùng nhầm sẽ cào ra toàn laptop, không phải linh kiện).
+      memoryzone: "https://memoryzone.com.vn/cpu-may-tinh"
 
   # ── VGA / Card màn hình (BRAND-GPU-DÒNG-MEM; dùng vga_sku) ──
   vga:
@@ -55,6 +62,8 @@ categories:
       gearvn:  "https://gearvn.com/collections/vga-card-man-hinh"
       phucanh: "https://www.phucanh.vn/card-man-hinh.html"
       anphat:  "https://www.anphatpc.com.vn/vga-card-man-hinh.html"
+      # Memoryzone: trang tổng "VGA - Card màn hình" (mọi hãng board-partner).
+      memoryzone: "https://memoryzone.com.vn/vga"
 
   # ── Mainboard / Bo mạch chủ (BRAND-CHIPSET-MODEL-MEMGEN; dùng mainboard_sku) ──
   mainboard:
@@ -70,6 +79,8 @@ categories:
       gearvn:  "https://gearvn.com/collections/mainboard-bo-mach-chu"
       phucanh: "https://www.phucanh.vn/bo-mach-chu.html"
       anphat:  "https://www.anphatpc.com.vn/bo-mach-chu.html"
+      # Memoryzone: trang tổng "Mainboard" (mọi hãng: MSI/Asus/ASRock/Gigabyte).
+      memoryzone: "https://memoryzone.com.vn/mainboard-pc"
 
   # ── Thiết bị văn phòng / gia dụng (BRAND + mã model; dùng chung av_sku) ──
   printer:
@@ -83,6 +94,8 @@ categories:
       phongvu: "https://phongvu.vn/c/may-in"
       phucanh: "https://www.phucanh.vn/may-in.html"
       anphat: "https://www.anphatpc.com.vn/may-in.html"
+      # KHÔNG thêm Memoryzone: site không có category page riêng cho máy in (chuyên PC/gaming
+      # gear/linh kiện) — không tìm thấy trang danh mục thật nào trong menu điều hướng.
   scanner:
     tier: A
     search_term: "máy scan"
@@ -93,6 +106,7 @@ categories:
       phongvu: "https://phongvu.vn/c/may-scan"
       phucanh: "https://www.phucanh.vn/may-quet-may-scan.html"
       anphat: "https://www.anphatpc.com.vn/may-quet-scaner_dm1108.html"
+      # KHÔNG thêm Memoryzone: không bán máy scan (không có trong menu điều hướng).
   ups:
     tier: A
     search_term: "bộ lưu điện ups"
@@ -107,6 +121,8 @@ categories:
       # thành "PSU - Nguồn máy tính" nhưng NỘI DUNG sản phẩm đúng là UPS: ARES AR610/AR620/AR630,
       # DELTA VX-1000VA...). Không dùng làm dấu hiệu nghi ngờ — đã xem trực tiếp card sản phẩm.
       gearvn: "https://gearvn.com/collections/bo-luu-dien-ups"
+      # KHÔNG thêm Memoryzone: không bán UPS (không có trong menu điều hướng — chỉ có nguồn máy
+      # tính PSU, khác hẳn UPS).
 
   projector:
     tier: A
@@ -120,6 +136,7 @@ categories:
       anphat:
         - "https://www.anphatpc.com.vn/may-chieu_dm1037.html"
         - "https://www.anphatpc.com.vn/may-chieu_dm1422.html"
+      # KHÔNG thêm Memoryzone: không bán máy chiếu.
   tv:
     tier: A
     search_term: "tivi"
@@ -131,6 +148,7 @@ categories:
       phongvu: "https://phongvu.vn/c/tivi"
       fptshop: "https://fptshop.com.vn/tivi"
       anphat: "https://www.anphatpc.com.vn/Tivi_dm1264.html"
+      # KHÔNG thêm Memoryzone: không bán TV.
 
   tablet:
     tier: A
@@ -144,6 +162,9 @@ categories:
       tgdd: "https://www.thegioididong.com/may-tinh-bang"
       phucanh: "https://www.phucanh.vn/may-tinh-bang.html"
       anphat: "https://www.anphatpc.com.vn/may-tinh-bang_dm1126.html"
+      # KHÔNG thêm Memoryzone: không bán máy tính bảng — dò menu điều hướng chỉ ra đúng một kết
+      # quả "OTG Lightning iPhone/iPad" (cáp OTG, không phải máy tính bảng), không phải trang bán
+      # tablet thật.
   ram:
     tier: A
     # A/B đo trên 5 site search-box (2026-07-23): "ram" THẮNG "ram pc" rõ rệt, 49 → 76 khớp (+55%).
@@ -169,6 +190,10 @@ categories:
       # GearVN: "RAM PC - RAM máy tính" — trang RAM DESKTOP (KHÔNG phải "ram-laptop", trang đó là
       # RAM SODIMM khác sản phẩm). Đã xác minh 2026-09.
       gearvn: "https://gearvn.com/collections/ram-pc"
+      # Memoryzone: "RAM PC" (RAM desktop UDIMM) — KHÔNG dùng "RAM Laptop, PC" (/ram, trang tổng
+      # gộp CẢ laptop lẫn PC) hay "/ram-laptop" (RAM SODIMM, sai loại — TNC category này chỉ bán
+      # RAM desktop, xem name_exclude "ram laptop|sodimm" ở trên).
+      memoryzone: "https://memoryzone.com.vn/ram-pc"
 
   ssd:
     tier: A
@@ -184,6 +209,9 @@ categories:
       # GearVN: trang gộp "SSD - Ổ cứng thể rắn" (đã xác minh 2026-09, có bộ lọc hãng
       # Samsung/WD/Kingston/Corsair/PNY bên trong — đúng là trang danh mục SSD desktop tổng).
       gearvn: "https://gearvn.com/collections/ssd-o-cung-the-ran"
+      # Memoryzone: "SSD gắn trong" (/ssd) — SSD lắp trong máy (2.5"/M.2), KHÔNG dùng
+      # "/o-cung-di-dong-ssd" (đó là SSD DI ĐỘNG, khác sản phẩm/khác giá).
+      memoryzone: "https://memoryzone.com.vn/ssd"
 
   hdd:
     tier: A
@@ -198,6 +226,10 @@ categories:
       # An Phát KHÔNG có trang HDD riêng biệt (chỉ có trang gộp "ổ cứng HDD/SSD") — name_match
       # "hdd" + name_exclude "ssd" ở trên tự lọc đúng ra HDD từ trang gộp này.
       anphat: "https://www.anphatpc.com.vn/o-cung-hdd-ssd_dm1314.html"
+      # Memoryzone: "/hdd" — HDD gắn trong (2.5"/3.5"), KHÔNG dùng "/o-cung-hdd-di-dong" (đó là
+      # HDD DI ĐỘNG, khác sản phẩm/khác giá) và KHÔNG dùng "/hdd-server" (HDD doanh nghiệp/NAS,
+      # khác tier giá với HDD phổ thông mà TNC bán ở category này).
+      memoryzone: "https://memoryzone.com.vn/hdd"
 
   # ── Phụ kiện linh-phu-kien (Tier A: bàn phím/chuột/webcam/USB/box đều có mã model in giống nhau) ──
   keyboard:
@@ -215,6 +247,8 @@ categories:
       anphat:  "https://www.anphatpc.com.vn/ban-phim-may-tinh_dm1027.html"
       # GearVN: "Bàn phím máy tính" (trang tổng, đã xác minh 2026-09).
       gearvn:  "https://gearvn.com/collections/ban-phim-may-tinh"
+      # Memoryzone: "Bàn Phím" (trang tổng gaming + văn phòng).
+      memoryzone: "https://memoryzone.com.vn/ban-phim-gaming-van-phong"
 
   mouse:
     # enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -231,6 +265,8 @@ categories:
       anphat:  "https://www.anphatpc.com.vn/chuot-may-tinh_dm1291.html"
       # GearVN: "Chuột máy tính - Chuột Gaming" (trang tổng, đã xác minh 2026-09).
       gearvn:  "https://gearvn.com/collections/chuot-may-tinh"
+      # Memoryzone: "Chuột Máy Tính" (trang tổng gaming + văn phòng).
+      memoryzone: "https://memoryzone.com.vn/chuot-gaming-van-phong"
 
   combo:
     enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -244,6 +280,8 @@ categories:
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=combo+phim+chuot"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=combo+phim+chuot&page={page}"
       anphat:  "https://www.anphatpc.com.vn/bo-ban-phim-chuot_dm1292.html"
+      # KHÔNG thêm Memoryzone: không có category page combo bàn phím+chuột riêng biệt (chỉ có
+      # "Combo/Pack Số Lượng" cho USB/microSD — khác loại sản phẩm).
 
   webcam:
     enabled: false   # tắt: ít giá trị, ưu tiên tốc độ scraper
@@ -259,6 +297,8 @@ categories:
       anphat:  "https://www.anphatpc.com.vn/webcam_dm1181.html"
       # GearVN: "Webcam PC, Laptop" (trang tổng, đã xác minh 2026-09).
       gearvn:  "https://gearvn.com/collections/webcam"
+      # Memoryzone: "Webcam" (trang tổng).
+      memoryzone: "https://memoryzone.com.vn/webcam"
 
   usb:
     enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -272,6 +312,9 @@ categories:
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=usb+flash"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=usb&categories=usb&page={page}"
       anphat:  "https://www.anphatpc.com.vn/o-usb-flash_dm1014.html"
+      # Memoryzone: "/usb" (trang tổng USB flash, đã lọc dung lượng/hãng trong menu — dùng trang
+      # gốc để lấy hết mọi hãng/dung lượng trong một lượt cào).
+      memoryzone: "https://memoryzone.com.vn/usb"
 
   memcard:
     tier: A
@@ -286,6 +329,8 @@ categories:
       # GearVN: "Thẻ nhớ" (trang tổng, đã xác minh 2026-09 qua điều hướng chính của site — nằm
       # trong mục "Ổ cứng, RAM, Thẻ nhớ").
       gearvn:  "https://gearvn.com/collections/the-nho"
+      # Memoryzone: "Thẻ nhớ" (trang tổng, gộp microSD + SD).
+      memoryzone: "https://memoryzone.com.vn/the-nho"
 
   box:
     tier: A
@@ -299,6 +344,10 @@ categories:
       anphat:
         - "https://www.anphatpc.com.vn/hop-box-o-cung_dm1238.html"
         - "https://www.anphatpc.com.vn/hop-dung-o-cung-hdd-box.html"
+      # Memoryzone: "Box ổ cứng HDD - SSD" (trang tổng box, không kèm "Dock ổ cứng" riêng để tránh
+      # lẫn thiết bị dock đa năng khác loại — name_match "box|dock|docking" ở trên vẫn tự lọc được
+      # dock thật nếu nó lọt vào trang box).
+      memoryzone: "https://memoryzone.com.vn/box-o-cung"
 
   # ── Thiết bị mạng (Tier A: router/switch/AP đều có mã model in giống nhau mọi cửa hàng) ──
   # Router (gộp: wifi gia đình + doanh nghiệp) — một search_term "router" phủ cả hai bên đối thủ;
@@ -327,6 +376,9 @@ categories:
       # trong mục điều hướng "Phần mềm, mạng"). GearVN KHÔNG có switch/access point riêng biệt
       # nên chỉ router được thêm ở đây.
       gearvn: "https://gearvn.com/collections/thiet-bi-phat-wifi"
+      # Memoryzone: "Router" (trang tổng thiết bị phát wifi — site cũng không có access point
+      # riêng, giống GearVN).
+      memoryzone: "https://memoryzone.com.vn/router-wifi"
 
   switch:
     tier: A
@@ -342,6 +394,9 @@ categories:
       vuhoang: "https://vuhoangtelecom.vn/thiet-bi-mang-switch/"
       wificomvn: "https://wifi.com.vn/switch-bo-chuyen-mach.html"
       anphat:  "https://www.anphatpc.com.vn/switch_dm1036.html"
+      # Memoryzone: "Switch Mạng" — LƯU Ý menu còn có "Switch Bàn Phím" (switch cơ khí bàn phím,
+      # HOÀN TOÀN khác sản phẩm) nằm cạnh trong gợi ý tự động; CHỈ dùng đúng URL switch-mang.
+      memoryzone: "https://memoryzone.com.vn/switch-mang"
 
   accesspoint:
     enabled: false   # tắt: gear doanh nghiệp, đối thủ ít bán → ít match
@@ -391,6 +446,11 @@ categories:
       tgdd: "https://www.thegioididong.com/may-tinh-de-ban"
       phucanh: "https://www.phucanh.vn/may-tinh-de-ban.html"
       anphat: "https://www.anphatpc.com.vn/may-tinh-dong-bo.html"
+      # Memoryzone: "PC Đồng Bộ" (/pc-dong-bo) — PC THƯƠNG HIỆU nguyên bộ (HP/Lenovo/Dell/Gigabyte),
+      # khớp đúng nghĩa với TNC "Máy bộ ...". KHÔNG dùng "/pc-may-bo" (trang tổng lẫn cả Mini PC),
+      # "/build-pc" hay "/pc-sieu-toc" (PC TỰ BUILD theo cấu hình CPU/VGA, không có mã model
+      # thương hiệu — giống lý do KHÔNG thêm GearVN bên dưới, pc_sku() sẽ không khớp được).
+      memoryzone: "https://memoryzone.com.vn/pc-dong-bo"
       # LƯU Ý: KHÔNG thêm GearVN ở đây. GearVN chỉ bán PC tự build theo cấu hình ("PC GVN" — đặt
       # tên theo CPU/VGA, không có mã model thương hiệu), khác hẳn PC thương hiệu (Dell/HP/Lenovo/
       # Asus nguyên bộ) mà TNC/pc.tnc bán. derive_sku() (pc_sku) sẽ không bao giờ khớp được hai bên
@@ -407,6 +467,8 @@ categories:
       fptshop: "https://fptshop.com.vn/tim-kiem?s=workstation&page={page}"
       phucanh: "https://www.phucanh.vn/may-tram-workstation.html"
       anphat: "https://www.anphatpc.com.vn/may-tinh-workstation-may-tram_dm1469.html"
+      # KHÔNG thêm Memoryzone: không bán máy trạm thương hiệu (Precision/ThinkStation/Z-series)
+      # — không có trong menu điều hướng.
 
   # ── Máy chủ (Server) — branded (Dell PowerEdge, HPE ProLiant, Lenovo ThinkSystem) có mã model ──
   server:
@@ -419,6 +481,9 @@ categories:
       phongvu: "https://phongvu.vn/c/may-chu-server"
       fptshop: "https://fptshop.com.vn/tim-kiem?s=server&page={page}"
       anphat: "https://www.anphatpc.com.vn/may-chu_dm1018.html"
+      # KHÔNG thêm Memoryzone: chỉ bán LINH KIỆN gắn cho server/NAS (RAM Server, HDD Server) chứ
+      # KHÔNG bán máy chủ thương hiệu nguyên bộ (PowerEdge/ProLiant/ThinkSystem) — không có trang
+      # danh mục máy chủ thật để khớp.
 
   # ── Phần mềm bản quyền (Windows/Office, diệt virus, đồ họa...) — dùng software_sku ──
   # Không có mã part như phần cứng: định danh = tên sản phẩm + số thiết bị + thời hạn (Kaspersky
@@ -456,6 +521,10 @@ categories:
       anphat:
         - "https://www.anphatpc.com.vn/camera_dm1216.html"
         - "https://www.anphatpc.com.vn/camera-quan-sat.html"
+      # KHÔNG thêm Memoryzone: KHÔNG bán camera an ninh. Gợi ý tự động duy nhất khớp từ khóa
+      # "camera" là https://memoryzone.com.vn/hdd-server-camera — đây là trang Ổ CỨNG chuyên
+      # dùng cho đầu ghi camera (surveillance HDD), KHÔNG PHẢI trang bán thiết bị camera. Dùng
+      # nhầm sẽ cào ra ổ cứng thay vì camera, sai hoàn toàn category.
 
   # ── Thiết bị âm thanh: tai nghe, loa, micro (BRAND + model) ──
   audio:
@@ -480,3 +549,10 @@ categories:
         - "https://gearvn.com/collections/tai-nghe-may-tinh"
         - "https://gearvn.com/collections/loa"
         - "https://gearvn.com/collections/microphone"
+      # Memoryzone: gộp "Tai Nghe" + "Loa" (đủ 2 trong 3 loại mà category `audio` bao phủ). KHÔNG
+      # thêm "/microphone" riêng — kiểm tra nhanh không thấy card sản phẩm micro rời ổn định trong
+      # menu (chỉ có microphone stream/gaming rải rác dưới các mục khác); bỏ qua để tránh
+      # missing_products rác thay vì cào nhầm trang không đúng.
+      memoryzone:
+        - "https://memoryzone.com.vn/tai-nghe"
+        - "https://memoryzone.com.vn/loa"

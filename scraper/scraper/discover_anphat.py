@@ -367,6 +367,10 @@ def _run_category(client, args) -> int:
     category_label = category.capitalize()
 
     tracked = fetch_catalog_skus(client, category_label)
+    # Fallback toàn catalog: An Phát có thể xếp sản phẩm vào category khác với TNC (vd router wifi
+    # EAP → An Phát "Router", TNC "Accesspoint"). SKU derive từ brand+model nên khớp chính xác; nếu
+    # SKU có trong toàn catalog nghĩa là TNC THẬT SỰ bán sản phẩm đó → không được đẩy vào missing.
+    tracked_all = fetch_catalog_skus(client)
     existing = fetch_existing_source_skus(client, COMPETITOR)
 
     urls = resolve_urls("anphat", category)
@@ -397,7 +401,7 @@ def _run_category(client, args) -> int:
     for item in found:
         sku = derive_sku(item["name"], item.get("url"), category_label)
         is_used = is_old_listing_name(item.get("name", ""))
-        if sku and sku in tracked:
+        if sku and (sku in tracked or sku in tracked_all):
             resolved_urls.append(item["url"])  # từng "thiếu" (nếu có) nay đã khớp -> resolve
             row = {**item, "sku": sku, "is_used": is_used}
             (matched_known if sku in existing else matched_new).append(row)

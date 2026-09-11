@@ -1564,6 +1564,18 @@ def audio_sku(name: str | None) -> str | None:
         code = max(mixed, key=len)
         return f"{BRAND}-{code}".upper().replace(" ", "-")
 
+    # Không có token chữ+số trong body — rơi xuống nhánh NGHI NGỜ (mọi token model đều thuần chữ,
+    # dễ gộp nhầm hai sản phẩm khác nhau vào một SKU). Trường hợp này ưu tiên MÃ PART trong ngoặc
+    # (vd "Tai nghe HP HyperX Cloud Core 7.1(4P4F2AA)" vs "Cloud Core Wireless(4P5D5AA)" — hai máy
+    # KHÁC GIÁ, hard-coded: nếu bỏ ngoặc chúng cùng về "HP-HYPERX-CLOUD-CORE"). Mã part có chữ+số và
+    # ≥6 ký tự mới được dùng (loại màu "(Black)" hay mã đuôi ngắn); nếu không có thì quay lại
+    # fallback chữ thường bên dưới.
+    part = re.search(r"\(([0-9A-Za-z][0-9A-Za-z\-]*[0-9][0-9A-Za-z\-]*)\)", name or "")
+    if part:
+        code = part.group(1)
+        if len(code) >= 6 and re.search(r"[a-z]", code, re.I) and re.search(r"\d", code):
+            return f"{BRAND}-{code}".upper().replace(" ", "-")
+
     # Fallback: dùng tất cả token model (giữ thứ tự vị trí, không sort length)
     # để "Sound Blaster", "G Pro" không bị đảo hay mất token.
     parts = model_toks[:4]
