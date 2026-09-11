@@ -8,9 +8,31 @@ name: Daily missing-products stock check (Mode C)
 # (Mode B, 4 lần/ngày) để không dồn thêm tải lên cùng khung giờ với hai job đó —
 # script này thường chạy SAU khi Mode A/B đã có lượt gần nhất trong ngày.
 #
-# Một job DUY NHẤT (không matrix theo cửa hàng): check_missing_stock.py tự quản lý
-# concurrency nội bộ (CONCURRENCY_LIMIT=4, xem file) và tự route qua proxy VN cho
-# đúng các cửa hàng cần (Phúc Anh/FPT Shop/Phong Vũ/TGĐĐ) hay httpx cho Wifi.com.vn.
+# CHIA NHIỀU JOB (2026-09): `missing_products` đã lên ~3.000 dòng chưa resolved mà
+# TOÀN BỘ đi qua MỘT job duy nhất (CONCURRENCY_LIMIT=4 trong script) — khi số link
+# tăng, một lượt chạy trọn bộ có thể chạm TRẦN CỨNG 6 TIẾNG/JOB của GitHub-hosted
+# runner và bị kill giữa chừng (mất công check của các dòng chưa kịp xử lý, không
+# có log rõ vì sao dừng). Sửa giống scrape.yml/sync.yml:
+#   - `prepare` là job nhẹ (chỉ supabase client, KHÔNG cần Playwright): đọc DB lấy
+#     số dòng unresolved theo từng competitor, chia mỗi competitor thành nhiều
+#     "leg" (mặc định 500 dòng/leg — chỉnh qua env LEG_ROWS) và đẩy danh sách leg
+#     qua matrix động (fromJson). Tự động thích ứng khi bảng lớn lên hoặc shop mới
+#     xuất hiện, không phải sửa YAML tay.
+#   - Mỗi leg = một job `check` riêng: chạy `check_missing_stock.py` với
+#     `--competitor` + `--offset` + `--limit` để chỉ quét đúng chunk của mình. Các
+#     leg chạy SONG SONG (bounded bởi max-parallel) — mỗi leg nhỏ chắc chắn xong
+#     thoải mái dưới trần 6h, kể cả shop lớn nhất (An Phát ~2.000 link → 4 leg).
+#     fail-fast:false để một leg lỗi không huỷ các leg khác.
+#   - `summary` gom log thời gian + lỗi của TẤT CẢ leg lại thành một bảng tổng kết.
+#   - `--competitor`/`--limit` (workflow_dispatch) vẫn hoạt động để chạy tay: nếu
+#     chỉ định competitor → chỉ tạo leg cho shop đó; nếu thêm limit → 1 leg duy nhất
+#     với đúng giới hạn đó (giữ nguyên hành vi debug trước đây).
+#
+# `check_missing_stock.py` tự quản lý concurrency nội bộ (CONCURRENCY_LIMIT=4) trong
+# TỪNG leg và tự route qua proxy VN cho đúng các cửa hàng cần (Phúc Anh/FPT Shop/
+# Phong Vũ/TGĐĐ) hay httpx cho Wifi.com.vn. Thứ tự cào trong DB được sắp theo url
+# (.order("url") trong fetch_missing_products) để các leg của CÙNG một competitor
+# chia theo --offset/--limit không đè nhau và không bỏ sót dòng nào.
 #
 # Các fix apt/IPv4 + cache Playwright giữ ĐỒNG BỘ với scrape.yml/sync.yml (cùng vấn đề
 # treo lúc "playwright install --with-deps" trên GitHub-hosted runner).
@@ -41,17 +63,114 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  check:
+  # ── Bước 0: đọc DB lấy danh sách competitor + số dòng unresolved, chia thành các
+  # leg (chunk) rồi đưa qua job `check` dưới dạng matrix động. Nhẹ, không cần
+  # Playwright — chỉ cần supabase client.
+  prepare:
     runs-on: ubuntu-latest
-    # Chốt an toàn thấp hơn trần cứng 360'/job của GitHub-hosted runner.
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    defaults:
+      run:
+        working-directory: scraper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install supabase client only (no Playwright)
+        run: pip install supabase python-dotenv
+      - name: Build missing-check matrix (competitor x chunks)
+        id: build
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          LEG_ROWS: "500"
+        run: |
+          MATRIX=$(LEG_ROWS="${{ env.LEG_ROWS }}" TARGET_COMPETITOR="${{ inputs.competitor }}" TARGET_LIMIT="${{ inputs.limit }}" python - <<'PY'
+          import json
+          import os
+          from collections import Counter
+
+          from scraper.db import get_client
+
+          LEG_ROWS = int(os.environ.get("LEG_ROWS") or "500")
+          target_comp = os.environ.get("TARGET_COMPETITOR", "").strip()
+          target_limit = os.environ.get("TARGET_LIMIT", "").strip()
+
+          client = get_client()
+          comps: list[str] = []
+          page, size = 0, 1000
+          while True:
+              q = client.table("missing_products").select("competitor").eq("resolved", False)
+              batch = q.range(page * size, page * size + size - 1).execute().data or []
+              comps.extend(r["competitor"] for r in batch)
+              if len(batch) < size:
+                  break
+              page += 1
+          counts = Counter(comps)
+
+          include = []
+          idx = 0
+          for comp, n in sorted(counts.items()):
+              if target_comp and comp != target_comp:
+                  continue
+              if target_limit:
+                  include.append({
+                      "id": f"leg-{idx:02d}",
+                      "competitor": comp,
+                      "offset": 0,
+                      "limit": int(target_limit),
+                      "label": f"{comp}",
+                  })
+                  idx += 1
+                  continue
+              for off in range(0, n, LEG_ROWS):
+                  lim = min(LEG_ROWS, n - off)
+                  include.append({
+                      "id": f"leg-{idx:02d}",
+                      "competitor": comp,
+                      "offset": off,
+                      "limit": lim,
+                      "label": f"{comp} (offset {off})",
+                  })
+                  idx += 1
+
+          payload = {"include": include}
+          print("== Legs ==")
+          for leg in include:
+              print(" -", leg["competitor"], "offset", leg["offset"], "limit", leg["limit"])
+          if not include:
+              print("(không có sản phẩm nào cần kiểm tra)")
+          print(f"Tổng số leg: {len(include)}")
+          print(json.dumps(payload, separators=(",", ":")))
+          PY
+          )
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  # ── Mỗi leg = một chunk (competitor × offset/limit), chạy trong một job riêng.
+  # Playwright chỉ cài ở job này (prepare không cần). Chạy SONG SONG — mỗi leg nhỏ
+  # chắc chắn dưới trần cứng 6h/job của GitHub-hosted runner.
+  check:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Số leg chạy song song cùng lúc. Quá cao dễ dồn nhiều IP runner cùng lúc gõ
+      # vào MỘT shop (rủi ro bị site chặn/rate-limit); quá thấp thì mất lợi ích song
+      # song. Chỉnh nếu cần (không ảnh hưởng đúng/sai, chỉ ảnh hưởng tốc độ).
+      max-parallel: 8
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    # Mỗi leg chỉ mang vài trăm link — 180 phút là chốt an toàn rất rộng, vẫn thấp hơn
+    # nhiều so với trần cứng 360' của GitHub-hosted runner.
     timeout-minutes: 180
     defaults:
       run:
         working-directory: scraper
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -78,7 +197,7 @@ jobs:
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
 
-      - name: Check missing_products stock
+      - name: Check missing_products stock - ${{ matrix.label }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
@@ -87,16 +206,44 @@ jobs:
           PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
           PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
         run: |
-          echo "::group::Mode C - check_missing_stock"
-          ARGS=()
+          echo "::group::Mode C - check_missing_stock (${{ matrix.label }})"
+          ARGS=(--competitor "${{ matrix.competitor }}" --offset ${{ matrix.offset }} --limit ${{ matrix.limit }})
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             ARGS+=(--dry)
           fi
-          if [ -n "${{ inputs.competitor }}" ]; then
-            ARGS+=(--competitor "${{ inputs.competitor }}")
-          fi
-          if [ -n "${{ inputs.limit }}" ]; then
-            ARGS+=(--limit "${{ inputs.limit }}")
-          fi
           python -m scraper.check_missing_stock "${ARGS[@]}"
+          echo "::endgroup::"
+          # Ghi thời gian chạy của leg vào artifact để job `summary` tổng hợp.
+          echo "leg ${{ matrix.id }}: ${{ matrix.label }}: $SECONDS s" > "$RUNNER_TEMP/timing-${{ matrix.id }}.txt"
+
+      - name: Upload timing data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timing-${{ matrix.id }}
+          path: ${{ runner.temp }}/timing-${{ matrix.id }}.txt
+          if-no-files-found: ignore
+          retention-days: 3
+
+  # ── Gom thời gian chạy của TẤT CẢ leg thành một bảng tổng kết. Chạy dù có leg
+  # lỗi/timeout (if: always()).
+  summary:
+    needs: check
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all timing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "timing-*"
+          path: /tmp/timings
+          merge-multiple: true
+      - name: Print timing summary
+        run: |
+          echo "::group::⏱ TIMING SUMMARY (toàn bộ leg)"
+          if ls /tmp/timings/*.txt >/dev/null 2>&1; then
+            cat /tmp/timings/*.txt
+          else
+            echo "(không có dữ liệu timing nào)"
+          fi
           echo "::endgroup::"

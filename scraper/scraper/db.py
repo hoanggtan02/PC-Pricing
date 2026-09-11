@@ -328,7 +328,7 @@ def fetch_missing_products(
     while True:
         q = client.table("missing_products").select(
             "competitor, category, brand, name, price, url, is_used, reason, in_stock, resolved"
-        )
+        ).order("url")
         if not include_resolved:
             q = q.eq("resolved", False)
         if competitor:

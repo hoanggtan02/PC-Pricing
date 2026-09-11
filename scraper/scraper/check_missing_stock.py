@@ -23,7 +23,7 @@ Cách dùng:
     python -m scraper.check_missing_stock --dry
     python -m scraper.check_missing_stock
     python -m scraper.check_missing_stock --competitor "An Phát PC"
-    python -m scraper.check_missing_stock --limit 50 --dry
+    python -m scraper.check_missing_stock --competitor "An Phát PC" --offset 500 --limit 500 --dry
 """
 
 from __future__ import annotations
@@ -165,9 +165,13 @@ async def _check_playwright(
         await page.close()
 
 
-async def run_check(dry_run: bool, competitor: str | None, limit: int | None) -> None:
+async def run_check(
+    dry_run: bool, competitor: str | None, limit: int | None, offset: int | None = None
+) -> None:
     client = get_client()
     rows = fetch_missing_products(client, competitor=competitor)
+    if offset:
+        rows = rows[offset:]
     if limit:
         rows = rows[:limit]
     if not rows:
@@ -285,9 +289,22 @@ def main() -> int:
     )
     ap.add_argument("--competitor", default=None, help="chỉ kiểm tra MỘT competitor")
     ap.add_argument("--limit", type=int, default=None, help="giới hạn số sản phẩm kiểm tra")
+    ap.add_argument(
+        "--offset",
+        type=int,
+        default=None,
+        help="bỏ qua N sản phẩm đầu (để chia một competitor thành nhiều chunk chạy song song)",
+    )
     ap.add_argument("--dry", action="store_true", help="chỉ in ra, không ghi vào DB")
     args = ap.parse_args()
-    asyncio.run(run_check(dry_run=args.dry, competitor=args.competitor, limit=args.limit))
+    asyncio.run(
+        run_check(
+            dry_run=args.dry,
+            competitor=args.competitor,
+            limit=args.limit,
+            offset=args.offset,
+        )
+    )
     return 0
 
 
