@@ -36,6 +36,19 @@ name: Daily missing-products stock check (Mode C)
 #
 # Các fix apt/IPv4 + cache Playwright giữ ĐỒNG BỘ với scrape.yml/sync.yml (cùng vấn đề
 # treo lúc "playwright install --with-deps" trên GitHub-hosted runner).
+#
+# FIX (2026-09) — job `prepare` báo lỗi "Invalid format ' - An Phát PC offset 0
+# limit 500'" và "Unable to process file command 'output' successfully":
+# script Python trong bước "Build missing-check matrix" in CẢ dòng debug
+# ("== Legs ==", từng dòng leg, "Tổng số leg: N") LẪN dòng JSON cuối cùng ra
+# stdout. Lệnh bash `MATRIX=$(python - <<'PY' ... PY)` bắt TOÀN BỘ stdout đó gán
+# vào biến MATRIX — nên khi ghi `echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"`, mỗi
+# dòng debug (không có dạng key=value) bị GitHub Actions coi là một dòng lệnh
+# output riêng và báo "Invalid format". File $GITHUB_OUTPUT bị hỏng khiến bước
+# tiếp theo ăn theo lỗi "Unable to process file command 'output'".
+# Sửa: mọi print() debug trong script chuyển sang `file=sys.stderr` (vẫn hiện
+# trong log Action bình thường), CHỈ giữ lại đúng một dòng in JSON ra stdout —
+# đây là dòng duy nhất mà `$(...)` nên bắt.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -90,6 +103,7 @@ jobs:
           MATRIX=$(LEG_ROWS="${{ env.LEG_ROWS }}" TARGET_COMPETITOR="${{ inputs.competitor }}" TARGET_LIMIT="${{ inputs.limit }}" python - <<'PY'
           import json
           import os
+          import sys
           from collections import Counter
 
           from scraper.db import get_client
@@ -137,12 +151,18 @@ jobs:
                   idx += 1
 
           payload = {"include": include}
-          print("== Legs ==")
+
+          # QUAN TRỌNG: mọi log debug phải in ra stderr, KHÔNG được lẫn vào stdout — vì $(...)
+          # trong bash bắt TOÀN BỘ stdout để gán cho MATRIX. Nếu debug lẫn vào stdout, các dòng đó
+          # (không có dạng key=value) sẽ làm hỏng file $GITHUB_OUTPUT (lỗi "Invalid format ...").
+          print("== Legs ==", file=sys.stderr)
           for leg in include:
-              print(" -", leg["competitor"], "offset", leg["offset"], "limit", leg["limit"])
+              print(" -", leg["competitor"], "offset", leg["offset"], "limit", leg["limit"], file=sys.stderr)
           if not include:
-              print("(không có sản phẩm nào cần kiểm tra)")
-          print(f"Tổng số leg: {len(include)}")
+              print("(không có sản phẩm nào cần kiểm tra)", file=sys.stderr)
+          print(f"Tổng số leg: {len(include)}", file=sys.stderr)
+
+          # CHỈ dòng này được in ra stdout — đây là dòng DUY NHẤT mà bash $(...) nên bắt.
           print(json.dumps(payload, separators=(",", ":")))
           PY
           )
