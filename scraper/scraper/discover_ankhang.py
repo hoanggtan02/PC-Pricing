@@ -35,8 +35,11 @@ from .db import (
     fetch_existing_source_skus,
     get_client,
     insert_prices,
+    resolve_missing_products,
+    upsert_missing_products,
     upsert_sources,
 )
+from .brand import brand_of
 from .sku import derive_sku
 
 COMPETITOR = "An Khang"
@@ -165,59 +168,94 @@ def main() -> int:
         print(f"  Found {len(raw)} raw items on An Khang search page.")
 
         category_label = cat.capitalize()
-        matched: dict[str, dict] = {}
+        existing_skus = fetch_existing_source_skus(client, COMPETITOR)
+
+        matched_new: list[dict] = []
+        matched_known: list[dict] = []
+        missing_rows: list[dict] = []
+        resolved_urls: list[str] = []
+
         for item in raw:
             sku = derive_sku(item["name"], item.get("url"), category_label)
-            if sku and sku in tracked and sku not in matched:
-                matched[sku] = item
+            if sku and sku in tracked:
+                resolved_urls.append(item.get("url") or "")
+                if sku not in existing_skus:
+                    matched_new.append({**item, "sku": sku})
+                else:
+                    matched_known.append({**item, "sku": sku})
+            else:
+                reason = "Không suy được SKU" if not sku else "TNC chưa bán sản phẩm này"
+                missing_rows.append({
+                    "competitor": COMPETITOR,
+                    "category": category_label,
+                    "brand": brand_of(item["name"]) or None,
+                    "name": item["name"],
+                    "price": item.get("price"),
+                    "url": item.get("url") or "",
+                    "is_used": is_old_listing_name(item.get("name", "")),
+                    "reason": reason,
+                })
 
-        print(f"  Matched {len(matched)} SKUs against TNC catalog.")
-        if not matched:
-            continue
-
-        existing_skus = fetch_existing_source_skus(client, COMPETITOR)
-        new_items = {k: v for k, v in matched.items() if k not in existing_skus}
-        existing_items = {k: v for k, v in matched.items() if k in existing_skus}
-
-        print(f"  New SKUs to insert: {len(new_items)} | Existing SKUs to update URL: {len(existing_items)}")
+        print(
+            f"  Matched {len(matched_new) + len(matched_known)} SKUs ({len(matched_new)} mới, "
+            f"{len(matched_known)} cũ refresh URL), {len(missing_rows)} không khớp."
+        )
 
         # Check stock cho SKU MỚI
-        new_stock = check_stock([v["url"] for v in new_items.values()]) if new_items else {}
+        new_stock = {
+            item["url"]: True for item in matched_new
+        }
+        if matched_new:
+            new_stock = check_stock([item["url"] for item in matched_new])
 
         if args.dry:
             print("\n--- DRY RUN RESULTS ---")
-            for sku, item in matched.items():
-                is_new = sku in new_items
-                in_s = new_stock.get(item["url"], True) if is_new else True
+            for item in matched_new:
+                in_s = new_stock.get(item["url"], True)
                 is_u = is_old_listing_name(item["name"])
                 u_tag = " [HÀNG CŨ/DEMO]" if is_u else ""
-                print(f"  • {sku:<30} | {item['price']:,} VND | {'Còn hàng' if in_s else 'HẾT HÀNG'}{u_tag} | {item['url']}")
+                print(f"  • {item['sku']:<30} | {item['price']:,} VND | {'Còn hàng' if in_s else 'HẾT HÀNG'}{u_tag} | {item['url']}")
+            for row in missing_rows[:10]:
+                price_s = f"{row['price']:,} VND" if row.get("price") else "?"
+                print(f"  - [MISSING] ({row['reason']}) {row['name'][:60]} — {price_s}")
+            if len(missing_rows) > 10:
+                print(f"  ... và {len(missing_rows) - 10} sản phẩm không khớp khác.")
             continue
 
-        # Upsert sources
+        # Upsert sources (cả mới lẫn cũ)
         source_rows = [
-            {"product_sku": sku, "competitor": COMPETITOR, "url": item["url"], "active": True}
-            for sku, item in matched.items()
+            {"product_sku": item["sku"], "competitor": COMPETITOR, "url": item["url"], "active": True}
+            for item in matched_new + matched_known
         ]
-        upsert_sources(client, source_rows)
+        if source_rows:
+            upsert_sources(client, source_rows)
 
-        # Insert price history & update price cache cho SKU MỚI
+        # Insert price history cho SKU MỚI
         price_rows = []
-        for sku, item in new_items.items():
+        for item in matched_new:
             in_s = new_stock.get(item["url"], True)
             is_u = is_old_listing_name(item["name"])
             price_rows.append({
-                "product_sku": sku,
+                "product_sku": item["sku"],
                 "competitor": COMPETITOR,
                 "price": item["price"],
                 "in_stock": in_s,
                 "is_used": is_u,
             })
-
         if price_rows:
             insert_prices(client, price_rows)
             total_inserted += len(price_rows)
-            print(f"✅ Successfully inserted {len(price_rows)} new prices for An Khang ({cat})!")
+            print(f"✅ Inserted {len(price_rows)} new prices for An Khang ({cat}).")
+
+        if missing_rows:
+            upsert_missing_products(client, missing_rows)
+        if resolved_urls:
+            resolve_missing_products(client, COMPETITOR, resolved_urls)
+
+        print(
+            f"  {len(missing_rows)} sản phẩm KHÔNG khớp lưu vào missing_products "
+            f"({len(resolved_urls)} sản phẩm thiếu nay đã khớp -> đánh dấu resolved)."
+        )
 
     print(f"\n🎉 Finished discovery for An Khang! Total new prices inserted: {total_inserted}")
     return 0

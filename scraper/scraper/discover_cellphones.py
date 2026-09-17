@@ -25,6 +25,11 @@ import argparse
 import re
 import sys
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+
 from playwright.sync_api import sync_playwright
 
 from .brand import brand_of
@@ -36,6 +41,8 @@ from .db import (
     fetch_existing_source_skus,
     get_client,
     insert_prices,
+    resolve_missing_products,
+    upsert_missing_products,
     upsert_sources,
 )
 from .sku import derive_sku
@@ -176,11 +183,27 @@ def main() -> int:
 
     category_label = args.category.capitalize()
     source_rows, price_rows = [], []
+    missing_rows: list[dict] = []
+    resolved_urls: list[str] = []
     new_count = 0
+
     for item in found:
         sku = derive_sku(item["name"], item.get("url"), category_label)
         if sku is None or sku not in tracked:
+            reason = "Không suy được SKU" if not sku else "TNC chưa bán sản phẩm này"
+            missing_rows.append({
+                "competitor": COMPETITOR,
+                "category": category_label,
+                "brand": brand_of(item["name"]) or None,
+                "name": item["name"],
+                "price": item.get("price"),
+                "url": item.get("url") or "",
+                "is_used": is_old_listing_name(item.get("name", "")),
+                "reason": reason,
+            })
             continue
+
+        resolved_urls.append(item.get("url") or "")
         in_stock = item.get("in_stock", True)
         flag = "" if in_stock else "  [OUT OF STOCK]"
         is_new = sku not in existing
@@ -199,13 +222,32 @@ def main() -> int:
             )
             new_count += 1
 
-    if not args.dry:
+    if args.dry:
+        print(
+            f"\n[DRY] {new_count} SKU MỚI khớp TNC, {len(source_rows) - new_count} SKU cũ (chỉ refresh URL), "
+            f"{len(missing_rows)} sản phẩm KHÔNG khớp (sẽ lưu vào missing_products nếu chạy thật)."
+        )
+        for row in missing_rows[:15]:
+            price_s = f"{row['price']:,} VND" if row.get("price") else "?"
+            print(f"  - [MISSING] ({row['reason']}) {row['name'][:60]} — {price_s}")
+        if len(missing_rows) > 15:
+            print(f"  ... và {len(missing_rows) - 15} sản phẩm không khớp khác.")
+        return 0
+
+    if source_rows:
         upsert_sources(client, source_rows)
+    if price_rows:
         insert_prices(client, price_rows)
+    if missing_rows:
+        upsert_missing_products(client, missing_rows)
+    if resolved_urls:
+        resolve_missing_products(client, COMPETITOR, resolved_urls)
 
     print(
         f"\nDone. {new_count} SKU MỚI được ghi giá trên {COMPETITOR} "
-        f"({len(source_rows) - new_count} SKU cũ chỉ refresh URL, không ghi giá lại)."
+        f"({len(source_rows) - new_count} SKU cũ chỉ refresh URL, không ghi giá lại), "
+        f"{len(missing_rows)} sản phẩm KHÔNG khớp được lưu vào missing_products "
+        f"({len(resolved_urls)} sản phẩm trước đây thiếu nay đã khớp -> đánh dấu resolved)."
     )
     return 0
 

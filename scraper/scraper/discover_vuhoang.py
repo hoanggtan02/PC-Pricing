@@ -29,8 +29,11 @@ from .db import (
     fetch_existing_source_skus,
     get_client,
     insert_prices,
+    resolve_missing_products,
+    upsert_missing_products,
     upsert_sources,
 )
+from .brand import brand_of
 from .sku import derive_sku
 
 COMPETITOR = "Vũ Hoàng Telecom"
@@ -164,15 +167,30 @@ def main() -> int:
 
     catalog_skus = fetch_catalog_skus(client)
     existing_sources = fetch_existing_source_skus(client, COMPETITOR)
+    category_label = cat.capitalize()
 
     matched_sources = []
     matched_prices = []
+    missing_rows: list[dict] = []
+    resolved_urls: list[str] = []
 
     for it in items:
         sku = derive_sku(it["name"], it["url"], cat)
         if not sku or sku not in catalog_skus:
+            reason = "Không suy được SKU" if not sku else "TNC chưa bán sản phẩm này"
+            missing_rows.append({
+                "competitor": COMPETITOR,
+                "category": category_label,
+                "brand": brand_of(it["name"]) or None,
+                "name": it["name"],
+                "price": it.get("price"),
+                "url": it.get("url") or "",
+                "is_used": is_old_listing_name(it.get("name", "")),
+                "reason": reason,
+            })
             continue
 
+        resolved_urls.append(it["url"])
         matched_sources.append({
             "product_sku": sku,
             "competitor": COMPETITOR,
@@ -188,11 +206,19 @@ def main() -> int:
                 "in_stock": it["in_stock"]
             })
 
-    print(f"Khớp {len(matched_sources)} sản phẩm với catalog TNC ({len(matched_prices)} sản phẩm mới chưa có giá).")
+    print(
+        f"Khớp {len(matched_sources)} sản phẩm với catalog TNC ({len(matched_prices)} sản phẩm mới chưa có giá), "
+        f"{len(missing_rows)} sản phẩm không khớp."
+    )
 
     if args.dry:
         for s in matched_sources[:10]:
             print(f"  [DRY] {s['product_sku']} -> {s['url']}")
+        for row in missing_rows[:10]:
+            price_s = f"{row['price']:,} VND" if row.get("price") else "?"
+            print(f"  [MISSING] ({row['reason']}) {row['name'][:60]} — {price_s}")
+        if len(missing_rows) > 10:
+            print(f"  ... và {len(missing_rows) - 10} sản phẩm không khớp khác.")
         return 0
 
     if matched_sources:
@@ -202,6 +228,13 @@ def main() -> int:
     if matched_prices:
         insert_prices(client, matched_prices)
         print(f"Đã lưu {len(matched_prices)} bản ghi giá mới.")
+
+    if missing_rows:
+        upsert_missing_products(client, missing_rows)
+        print(f"Đã lưu {len(missing_rows)} sản phẩm không khớp vào missing_products.")
+
+    if resolved_urls:
+        resolve_missing_products(client, COMPETITOR, resolved_urls)
 
     return 0
 

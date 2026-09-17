@@ -1,3 +1,14 @@
+# ── competitors (cấu hình template tìm kiếm mặc định cho các site có ô search) ─────────────────
+competitors:
+  hacom:
+    search_url: "https://hacom.vn/tim?q={query}"
+  cellphones:
+    search_url: "https://cellphones.com.vn/catalogsearch/result?q={query}"
+  ankhang:
+    search_url: "https://www.ankhang.vn/tim?q={query}"
+  tinhocngoisao:
+    search_url: "https://tinhocngoisao.com/search?q={query}"
+
 # ── categories ─────────────────────────────────────────────────────────────────────────────────
 categories:
   monitor:
@@ -21,6 +32,10 @@ categories:
       # Memoryzone: trang tổng "Màn hình - Loa" -> /man-hinh (mọi hãng, mọi loại màn hình desktop).
       # KHÔNG dùng /man-hinh-gaming hay /man-hinh-van-phong riêng lẻ vì sẽ bỏ sót phần còn lại.
       memoryzone: "https://memoryzone.com.vn/man-hinh"
+      hacom: "https://hacom.vn/man-hinh-may-tinh"
+      cellphones: "https://cellphones.com.vn/man-hinh.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/man-hinh-may-tinh"
+      ankhang: "https://www.ankhang.vn/man-hinh-may-tinh.html"
 
   cpu:
     tier: A
@@ -42,6 +57,9 @@ categories:
       # dùng các link "laptop-cpu-i5"/"laptop-cpu-ryzen-5" trong menu: đó là bộ LỌC LAPTOP theo
       # CPU, không phải trang bán CPU rời — dùng nhầm sẽ cào ra toàn laptop, không phải linh kiện).
       memoryzone: "https://memoryzone.com.vn/cpu-may-tinh"
+      hacom: "https://hacom.vn/cpu-bo-vi-xu-ly"
+      cellphones: "https://cellphones.com.vn/linh-kien/cpu.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/cpu-bo-vi-xu-ly"
 
   # ── VGA / Card màn hình (BRAND-GPU-DÒNG-MEM; dùng vga_sku) ──
   vga:
@@ -64,6 +82,9 @@ categories:
       anphat:  "https://www.anphatpc.com.vn/vga-card-man-hinh.html"
       # Memoryzone: trang tổng "VGA - Card màn hình" (mọi hãng board-partner).
       memoryzone: "https://memoryzone.com.vn/vga"
+      hacom: "https://hacom.vn/vga-card-man-hinh"
+      cellphones: "https://cellphones.com.vn/linh-kien/card-man-hinh-vga.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/card-man-hinh"
 
   # ── Mainboard / Bo mạch chủ (BRAND-CHIPSET-MODEL-MEMGEN; dùng mainboard_sku) ──
   mainboard:
@@ -81,6 +102,9 @@ categories:
       anphat:  "https://www.anphatpc.com.vn/bo-mach-chu.html"
       # Memoryzone: trang tổng "Mainboard" (mọi hãng: MSI/Asus/ASRock/Gigabyte).
       memoryzone: "https://memoryzone.com.vn/mainboard-pc"
+      hacom: "https://hacom.vn/mainboard-bo-mach-chu"
+      cellphones: "https://cellphones.com.vn/linh-kien/mainboard-bo-mach-chu.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/bo-mach-chu"
 
   # ── Thiết bị văn phòng / gia dụng (BRAND + mã model; dùng chung av_sku) ──
   printer:
@@ -96,6 +120,10 @@ categories:
       anphat: "https://www.anphatpc.com.vn/may-in.html"
       # KHÔNG thêm Memoryzone: site không có category page riêng cho máy in (chuyên PC/gaming
       # gear/linh kiện) — không tìm thấy trang danh mục thật nào trong menu điều hướng.
+      hacom: "https://hacom.vn/may-in"
+      cellphones: "https://cellphones.com.vn/may-in.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/may-in"
+      ankhang: "https://www.ankhang.vn/may-in.html"
   scanner:
     tier: A
     search_term: "máy scan"
@@ -107,6 +135,8 @@ categories:
       phucanh: "https://www.phucanh.vn/may-quet-may-scan.html"
       anphat: "https://www.anphatpc.com.vn/may-quet-scaner_dm1108.html"
       # KHÔNG thêm Memoryzone: không bán máy scan (không có trong menu điều hướng).
+      tinhocngoisao: "https://tinhocngoisao.com/collections/may-scan"
+      ankhang: "https://www.ankhang.vn/may-scan.html"
   ups:
     tier: A
     search_term: "bộ lưu điện ups"
@@ -123,6 +153,9 @@ categories:
       gearvn: "https://gearvn.com/collections/bo-luu-dien-ups"
       # KHÔNG thêm Memoryzone: không bán UPS (không có trong menu điều hướng — chỉ có nguồn máy
       # tính PSU, khác hẳn UPS).
+      tinhocngoisao: "https://tinhocngoisao.com/collections/bo-luu-dien"
+      hacom: "https://hacom.vn/bo-luu-dien"
+      vuhoang: "https://vuhoangtelecom.vn/bo-luu-dien-ups/"
 
   projector:
     tier: A
@@ -137,6 +170,10 @@ categories:
         - "https://www.anphatpc.com.vn/may-chieu_dm1037.html"
         - "https://www.anphatpc.com.vn/may-chieu_dm1422.html"
       # KHÔNG thêm Memoryzone: không bán máy chiếu.
+      hacom: "https://hacom.vn/may-chieu"
+      cellphones: "https://cellphones.com.vn/nha-thong-minh/may-chieu.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/may-chieu"
+      ankhang: "https://www.ankhang.vn/may-chieu.html"
   tv:
     tier: A
     search_term: "tivi"
@@ -149,6 +186,8 @@ categories:
       fptshop: "https://fptshop.com.vn/tivi"
       anphat: "https://www.anphatpc.com.vn/Tivi_dm1264.html"
       # KHÔNG thêm Memoryzone: không bán TV.
+      cellphones: "https://cellphones.com.vn/tivi.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/tivi"
 
   tablet:
     tier: A
@@ -165,6 +204,8 @@ categories:
       # KHÔNG thêm Memoryzone: không bán máy tính bảng — dò menu điều hướng chỉ ra đúng một kết
       # quả "OTG Lightning iPhone/iPad" (cáp OTG, không phải máy tính bảng), không phải trang bán
       # tablet thật.
+      cellphones: "https://cellphones.com.vn/tablet.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/may-tinh-bang"
   ram:
     tier: A
     # A/B đo trên 5 site search-box (2026-07-23): "ram" THẮNG "ram pc" rõ rệt, 49 → 76 khớp (+55%).
@@ -194,6 +235,10 @@ categories:
       # gộp CẢ laptop lẫn PC) hay "/ram-laptop" (RAM SODIMM, sai loại — TNC category này chỉ bán
       # RAM desktop, xem name_exclude "ram laptop|sodimm" ở trên).
       memoryzone: "https://memoryzone.com.vn/ram-pc"
+      hacom: "https://hacom.vn/ram-bo-nho-trong"
+      cellphones: "https://cellphones.com.vn/linh-kien/ram.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/bo-nho-ram"
+      ankhang: "https://www.ankhang.vn/bo-nho-trong.html"
 
   ssd:
     tier: A
@@ -212,6 +257,10 @@ categories:
       # Memoryzone: "SSD gắn trong" (/ssd) — SSD lắp trong máy (2.5"/M.2), KHÔNG dùng
       # "/o-cung-di-dong-ssd" (đó là SSD DI ĐỘNG, khác sản phẩm/khác giá).
       memoryzone: "https://memoryzone.com.vn/ssd"
+      hacom: "https://hacom.vn/o-cung-ssd"
+      cellphones: "https://cellphones.com.vn/linh-kien/o-cung.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/o-cung-ssd"
+      ankhang: "https://www.ankhang.vn/o-cung-ssd.html"
 
   hdd:
     tier: A
@@ -230,6 +279,10 @@ categories:
       # HDD DI ĐỘNG, khác sản phẩm/khác giá) và KHÔNG dùng "/hdd-server" (HDD doanh nghiệp/NAS,
       # khác tier giá với HDD phổ thông mà TNC bán ở category này).
       memoryzone: "https://memoryzone.com.vn/hdd"
+      hacom: "https://hacom.vn/o-cung-hdd-desktop"
+      cellphones: "https://cellphones.com.vn/linh-kien/o-cung/hdd.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/o-cung-hdd"
+      ankhang: "https://www.ankhang.vn/o-cung-hdd.html"
 
   # ── Phụ kiện linh-phu-kien (Tier A: bàn phím/chuột/webcam/USB/box đều có mã model in giống nhau) ──
   keyboard:
@@ -249,6 +302,10 @@ categories:
       gearvn:  "https://gearvn.com/collections/ban-phim-may-tinh"
       # Memoryzone: "Bàn Phím" (trang tổng gaming + văn phòng).
       memoryzone: "https://memoryzone.com.vn/ban-phim-gaming-van-phong"
+      hacom: "https://hacom.vn/ban-phim"
+      cellphones: "https://cellphones.com.vn/phu-kien/chuot-ban-phim-may-tinh/ban-phim.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/ban-phim"
+      ankhang: "https://www.ankhang.vn/ban-phim.html"
 
   mouse:
     # enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -267,6 +324,10 @@ categories:
       gearvn:  "https://gearvn.com/collections/chuot-may-tinh"
       # Memoryzone: "Chuột Máy Tính" (trang tổng gaming + văn phòng).
       memoryzone: "https://memoryzone.com.vn/chuot-gaming-van-phong"
+      hacom: "https://hacom.vn/chuot-may-tinh"
+      cellphones: "https://cellphones.com.vn/phu-kien/chuot-ban-phim-may-tinh/chuot.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/chuot"
+      ankhang: "https://www.ankhang.vn/chuot-may-tinh.html"
 
   combo:
     enabled: false   # tắt: giá rẻ, ưu tiên tốc độ scraper
@@ -331,6 +392,11 @@ categories:
       gearvn:  "https://gearvn.com/collections/the-nho"
       # Memoryzone: "Thẻ nhớ" (trang tổng, gộp microSD + SD).
       memoryzone: "https://memoryzone.com.vn/the-nho"
+      hacom: "https://hacom.vn/the-nho"
+      cellphones: "https://cellphones.com.vn/phu-kien/the-nho-usb-otg/the-nho.html"
+      ankhang: "https://www.ankhang.vn/the-nho.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/the-nho"
+      phucanh: "https://www.phucanh.vn/the-nho.html"
 
   box:
     tier: A
@@ -348,6 +414,8 @@ categories:
       # lẫn thiết bị dock đa năng khác loại — name_match "box|dock|docking" ở trên vẫn tự lọc được
       # dock thật nếu nó lọt vào trang box).
       memoryzone: "https://memoryzone.com.vn/box-o-cung"
+      cellphones: "https://cellphones.com.vn/linh-kien/o-cung/hop-dung-o-cung.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/box-o-cung"
 
   # ── Thiết bị mạng (Tier A: router/switch/AP đều có mã model in giống nhau mọi cửa hàng) ──
   # Router (gộp: wifi gia đình + doanh nghiệp) — một search_term "router" phủ cả hai bên đối thủ;
@@ -379,6 +447,10 @@ categories:
       # Memoryzone: "Router" (trang tổng thiết bị phát wifi — site cũng không có access point
       # riêng, giống GearVN).
       memoryzone: "https://memoryzone.com.vn/router-wifi"
+      hacom: "https://hacom.vn/thiet-bi-mang"
+      cellphones: "https://cellphones.com.vn/phu-kien/thiet-bi-mang/thiet-bi-phat-song-wifi/router-wifi.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/thiet-bi-mang"
+      ankhang: "https://www.ankhang.vn/thiet-bi-mang.html"
 
   switch:
     tier: A
@@ -397,6 +469,10 @@ categories:
       # Memoryzone: "Switch Mạng" — LƯU Ý menu còn có "Switch Bàn Phím" (switch cơ khí bàn phím,
       # HOÀN TOÀN khác sản phẩm) nằm cạnh trong gợi ý tự động; CHỈ dùng đúng URL switch-mang.
       memoryzone: "https://memoryzone.com.vn/switch-mang"
+      hacom: "https://hacom.vn/thiet-bi-chia-mang-switch"
+      cellphones: "https://cellphones.com.vn/phu-kien/thiet-bi-mang/hub-switch.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/switch"
+      ankhang: "https://www.ankhang.vn/switch.html"
 
   accesspoint:
     enabled: false   # tắt: gear doanh nghiệp, đối thủ ít bán → ít match
@@ -409,6 +485,7 @@ categories:
       phongvu: "https://phongvu.vn/search?router=productListing&query=access-point"
       tgdd:    "https://www.thegioididong.com/tim-kiem?key=access+point"
       fptshop: "https://fptshop.com.vn/tim-kiem?tab=kham-pha&s=access+point&page={page}"
+      wificomvn: "https://wifi.com.vn/access-point-wifi.html"
 
   wlan_controller:
     enabled: false   # tắt: gear doanh nghiệp, đối thủ ít bán → ít match
@@ -455,6 +532,10 @@ categories:
       # tên theo CPU/VGA, không có mã model thương hiệu), khác hẳn PC thương hiệu (Dell/HP/Lenovo/
       # Asus nguyên bộ) mà TNC/pc.tnc bán. derive_sku() (pc_sku) sẽ không bao giờ khớp được hai bên
       # — thêm vào chỉ tạo rác trong missing_products, không tạo được khớp giá nào.
+      hacom: "https://hacom.vn/may-tinh-de-ban"
+      cellphones: "https://cellphones.com.vn/may-tinh-de-ban.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/may-tinh-de-ban"
+      ankhang: "https://www.ankhang.vn/may-tinh-de-ban.html"
   # ── Máy trạm (Workstation) — branded (Dell Precision, HP Z, Lenovo ThinkStation) có mã model ──
   workstation:
     tier: A
@@ -469,6 +550,7 @@ categories:
       anphat: "https://www.anphatpc.com.vn/may-tinh-workstation-may-tram_dm1469.html"
       # KHÔNG thêm Memoryzone: không bán máy trạm thương hiệu (Precision/ThinkStation/Z-series)
       # — không có trong menu điều hướng.
+      hacom: "https://hacom.vn/pc-workstations"
 
   # ── Máy chủ (Server) — branded (Dell PowerEdge, HPE ProLiant, Lenovo ThinkSystem) có mã model ──
   server:
@@ -484,6 +566,7 @@ categories:
       # KHÔNG thêm Memoryzone: chỉ bán LINH KIỆN gắn cho server/NAS (RAM Server, HDD Server) chứ
       # KHÔNG bán máy chủ thương hiệu nguyên bộ (PowerEdge/ProLiant/ThinkSystem) — không có trang
       # danh mục máy chủ thật để khớp.
+      hacom: "https://hacom.vn/may-chu-hang"
 
   # ── Phần mềm bản quyền (Windows/Office, diệt virus, đồ họa...) — dùng software_sku ──
   # Không có mã part như phần cứng: định danh = tên sản phẩm + số thiết bị + thời hạn (Kaspersky
@@ -504,6 +587,7 @@ categories:
       tgdd:       "https://www.thegioididong.com/phan-mem"
       cellphones: "https://cellphones.com.vn/phu-kien/may-tinh-laptop/phan-mem.html"
       hacom:      "https://hacom.vn/phan-mem-ban-quyen"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/phan-mem"
 
   # ── Camera an ninh (BRAND + model) ──
   camera:
@@ -518,6 +602,7 @@ categories:
       tgdd:    "https://www.thegioididong.com/camera-giam-sat"
       fptshop: "https://fptshop.com.vn/tim-kiem?s=camera&categories=camera&page={page}"
       phucanh: "https://www.phucanh.vn/camera-giam-sat.html"
+      vuhoang: "https://vuhoangtelecom.vn/camera-quan-sat/"
       anphat:
         - "https://www.anphatpc.com.vn/camera_dm1216.html"
         - "https://www.anphatpc.com.vn/camera-quan-sat.html"
@@ -525,6 +610,9 @@ categories:
       # "camera" là https://memoryzone.com.vn/hdd-server-camera — đây là trang Ổ CỨNG chuyên
       # dùng cho đầu ghi camera (surveillance HDD), KHÔNG PHẢI trang bán thiết bị camera. Dùng
       # nhầm sẽ cào ra ổ cứng thay vì camera, sai hoàn toàn category.
+      hacom: "https://hacom.vn/camera-quan-sat"
+      cellphones: "https://cellphones.com.vn/phu-kien/camera.html"
+      tinhocngoisao: "https://tinhocngoisao.com/collections/camera"
 
   # ── Thiết bị âm thanh: tai nghe, loa, micro (BRAND + model) ──
   audio:
@@ -556,3 +644,11 @@ categories:
       memoryzone:
         - "https://memoryzone.com.vn/tai-nghe"
         - "https://memoryzone.com.vn/loa"
+      hacom: "https://hacom.vn/tai-nghe"
+      cellphones: "https://cellphones.com.vn/thiet-bi-am-thanh/tai-nghe.html"
+      tinhocngoisao:
+        - "https://tinhocngoisao.com/collections/tai-nghe"
+        - "https://tinhocngoisao.com/collections/loa"
+      ankhang:
+        - "https://www.ankhang.vn/tai-nghe.html"
+        - "https://www.ankhang.vn/loa-may-tinh.html"

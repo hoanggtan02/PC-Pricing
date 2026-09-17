@@ -30,8 +30,12 @@ from .db import (
     fetch_catalog_skus,
     fetch_existing_source_skus,
     get_client,
+    insert_prices,
+    resolve_missing_products,
+    upsert_missing_products,
     upsert_sources,
 )
+from .brand import brand_of
 from .stock import is_in_stock as stock_is_in
 from .sku import derive_sku
 
@@ -159,11 +163,27 @@ def main() -> int:
     category_label = args.category.capitalize()
     fallback_url = BRANDS.get(args.brand) if args.category == "laptop" else resolve_url("phucanh", args.category)
     source_rows = []
+    price_rows = []
+    missing_rows: list[dict] = []
+    resolved_urls: list[str] = []
 
     for item in found:
         sku = derive_sku(item["name"], item.get("url"), category_label)
         if sku is None or sku not in tracked:
+            reason = "Không suy được SKU" if not sku else "TNC chưa bán sản phẩm này"
+            missing_rows.append({
+                "competitor": COMPETITOR,
+                "category": category_label,
+                "brand": brand_of(item["name"]) or None,
+                "name": item["name"],
+                "price": item.get("price"),
+                "url": item.get("url") or "",
+                "is_used": is_old_listing_name(item.get("name", "")),
+                "reason": reason,
+            })
             continue
+
+        resolved_urls.append(item.get("url") or "")
         is_new = sku not in existing
         is_used = is_old_listing_name(item.get("name", ""))
         tag = "[MỚI] " if is_new else ""
@@ -172,11 +192,40 @@ def main() -> int:
         source_rows.append(
             {"product_sku": sku, "competitor": COMPETITOR, "url": item.get("url") or fallback_url, "is_used": is_used}
         )
+        # Ghi giá cho SKU MỚI
+        if is_new:
+            price_rows.append({
+                "product_sku": sku, "competitor": COMPETITOR,
+                "price": item["price"], "in_stock": item.get("in_stock", True), "is_used": is_used,
+            })
 
-    if not args.dry and source_rows:
+    if args.dry:
+        print(
+            f"\n[DRY] {len(price_rows)} SKU MỚI khớp TNC, {len(source_rows) - len(price_rows)} SKU cũ (chỉ refresh URL), "
+            f"{len(missing_rows)} sản phẩm KHÔNG khớp (sẽ lưu vào missing_products nếu chạy thật)."
+        )
+        for row in missing_rows[:15]:
+            price_s = f"{row['price']:,} VND" if row.get("price") else "?"
+            print(f"  - [MISSING] ({row['reason']}) {row['name'][:60]} — {price_s}")
+        if len(missing_rows) > 15:
+            print(f"  ... và {len(missing_rows) - 15} sản phẩm không khớp khác.")
+        return 0
+
+    if source_rows:
         upsert_sources(client, source_rows)
-        print(f"\nSaved {len(source_rows)} source(s) to DB.")
+    if price_rows:
+        insert_prices(client, price_rows)
+    if missing_rows:
+        upsert_missing_products(client, missing_rows)
+    if resolved_urls:
+        resolve_missing_products(client, COMPETITOR, resolved_urls)
 
+    print(
+        f"\nDone. {len(price_rows)} SKU MỚI được ghi giá trên {COMPETITOR} "
+        f"({len(source_rows) - len(price_rows)} SKU cũ chỉ refresh URL), "
+        f"{len(missing_rows)} sản phẩm KHÔNG khớp được lưu vào missing_products "
+        f"({len(resolved_urls)} sản phẩm trước đây thiếu nay đã khớp -> đánh dấu resolved)."
+    )
     return 0
 
 if __name__ == "__main__":
