@@ -1316,6 +1316,7 @@ _SW_SPEC = re.compile(
     r"kích|kich|hoạt|hoat|active|code|activation|"
     r"điện|dien|tử|tu|online|dwnld|dl|all|lng|lang|language|pk|pack|package|lic|"
     r"64bit|32bit|64-bit|32-bit|x64|x86|bit|apac|em|nr|"
+    r"retail|medialess|esd|subpk|subpkl|subscr|oei|dsp|dvd|c2r|english|eng|intl|"
     # MỚI: mô tả CHUNG của category "software" — không phân biệt sản phẩm nào với sản phẩm nào,
     # nên phải loại khỏi phần định danh (xem BUG #1 ở trên).
     r"diệt|diet|virus|và|va|and)$",
@@ -1365,12 +1366,17 @@ def software_sku(name: str | None) -> str | None:
         return None
     BRAND = brand.upper()
 
-    # Phân biệt bản Microsoft ESD (Key điện tử) và FPP (Hộp vật lý) tránh trùng lặp SKU gây sót sản phẩm
+    # Phân biệt bản Microsoft ESD (Key điện tử) và FPP (Hộp vật lý / Medialess) tránh trùng lặp SKU
     is_esd = False
     if BRAND == "MICROSOFT":
         low_name = name.lower()
-        if any(kw in low_name for kw in ["esd", "điện tử", "dien tu", "online", "dwnld", "key điện tử", "download"]):
+        if any(kw in low_name for kw in [
+            "esd", "điện tử", "dien tu", "online", "dwnld", "key điện tử", "download", "06604", "06640"
+        ]):
             is_esd = True
+        # Ưu tiên nếu có mã 06630 hoặc medialess thì là bản Hộp (FPP)
+        if any(kw in low_name for kw in ["06630", "medialess", "fpp"]):
+            is_esd = False
 
     # Bắt TẤT CẢ cụm số lượng trong tên (không chỉ cụm ĐẦU TIÊN) — "1Server + 5PCS" có 2 cụm, cả
     # hai đều là định danh thật của gói combo server+client (xem BUG #1/#2 ở docstring khối).
