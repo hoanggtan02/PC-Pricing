@@ -6,22 +6,14 @@ proxy bị lỗi kết nối (hết hạn/sập), tự đánh dấu "dead" trong
 tiếp còn sống — không cần sửa code scraper, không cần chờ người canh log rồi đổi tay.
 
 NGUỒN proxy, theo thứ tự ưu tiên (xem _load_proxies()):
-  1. TỰ ĐỘNG TẢI VÀ GỘP proxy VN MIỄN PHÍ từ BA nguồn độc lập (BẬT SẴN, không cần cấu hình gì
-     thêm) — xem DEFAULT_PROXYSCRAPE_URL, DEFAULT_FINEPROXY_URL, DEFAULT_DATABAY_URL:
-       a. ProxyScrape — trả về TEXT THUẦN, mỗi dòng một "ip:port".
-       b. FineProxy VN — trả về JSON {"rows":[{"ip","port","protos":[...]},...]} (đã xác minh cấu
-          trúc thực tế 2026-08, xem _parse_fineproxy_response()).
-       c. Databay VN — trả về JSON {"data":[{"ip","port","protocol","ssl","iso",...}]} (đã xác
-          minh cấu trúc thực tế 2026-08, xem _parse_databay_response()). "protocol" (Http/Socks5)
-          quyết định scheme của proxy.server; với protocol Http, "ssl" quyết định dùng http://
-          hay https:// — xem _databay_server().
-     Gộp (union, dedupe theo "ip:port") thay vì chỉ dùng MỘT nguồn: các nguồn free-proxy độc lập
-     hiếm khi cùng chết cùng lúc, và bảng danh sách VN của mỗi nguồn khá nhỏ (FineProxy chỉ ~7-10
-     proxy VN tại một thời điểm) nên gộp lại vẫn còn rẻ để health-check. Tắt cả ba bằng
-     PROXY_AUTO_FETCH=0; tắt riêng từng nguồn bằng PROXY_FINEPROXY_FETCH=0 / PROXY_DATABAY_FETCH=0
-     (giữ ProxyScrape); đổi URL nguồn qua PROXY_SCRAPE_URL / PROXY_FINEPROXY_URL / PROXY_DATABAY_URL.
-  2. PROXY_SERVER đơn lẻ (tương thích ngược) — dự phòng khi cả ba nguồn tự tải đều lỗi/rỗng hoặc
-     bị tắt.
+  1. TỰ ĐỘNG TẢI VÀ GỘP proxy VN MIỄN PHÍ từ CÁC nguồn độc lập (BẬT SẴN, không cần cấu hình gì thêm):
+       a. ProxyScrape VN: text thuần "ip:port" mỗi dòng.
+       b. Proxifly VN: danh sách proxy VN cập nhật liên tục hàng giờ trên GitHub (hàng trăm proxy).
+       c. Geonode VN: API proxy VN với nhiều protocol (HTTP, HTTPS, SOCKS5).
+       d. FineProxy / Databay VN (dự phòng).
+     Gộp (union, dedupe theo "ip:port") và tự động HEALTH CHECK trực tiếp với FPT Shop / Thế Giới Di Động,
+     chỉ giữ lại các proxy sống, phản hồi nhanh (<4.0s) để đưa vào pool cào.
+  2. PROXY_SERVER đơn lẻ (tương thích ngược) — dự phòng khi tất cả nguồn tự tải đều lỗi/rỗng hoặc bị tắt.
 
   (Đã bỏ PROXY_LIST tĩnh — không dùng, luôn để trống trong thực tế. Nếu sau này cần dán tay một
   danh sách proxy trả phí, dùng lại _parse_proxy_list()/PROXY_SCRAPE_URL trỏ tới một endpoint tự
@@ -45,8 +37,10 @@ from __future__ import annotations
 import functools
 import json
 import os
+from pathlib import Path
 import re
 import threading
+import time
 
 import httpx
 from dotenv import load_dotenv
@@ -125,6 +119,22 @@ class ProxyPool:
                     return self._all[i]
             return None  # mọi proxy đều đã chết
 
+    def next_proxy(self) -> dict | None:
+        """Lấy proxy theo vòng tròn (Round-Robin) và nhảy con trỏ sang proxy kế tiếp.
+        Dùng để phân phối đều danh sách proxy cho nhiều request/page khác nhau, tránh
+        dồn tất cả request vào cùng 1 proxy làm nó bị quá tải hoặc Cloudflare chặn.
+        """
+        with self._lock:
+            if not self._all:
+                return None
+            n = len(self._all)
+            for step in range(n):
+                i = (self._idx + step) % n
+                if i not in self._dead:
+                    self._idx = (i + 1) % n  # Tịnh tiến tới vị trí tiếp theo
+                    return self._all[i]
+            return None
+
     def mark_dead(self, proxy: dict | None) -> None:
         """Đánh dấu một proxy là chết (hết hạn/lỗi kết nối) — vòng quay sẽ bỏ qua nó."""
         if proxy is None:
@@ -183,6 +193,14 @@ DEFAULT_PROXYSCRAPE_URL = (
     "?request=display_proxies&proxy_format=ipport&format=text&country=vn"
 )
 
+DEFAULT_GEONODE_URL = (
+    "https://proxylist.geonode.com/api/proxy-list"
+    "?country=VN&limit=100&page=1&sort_by=lastChecked&sort_type=desc"
+)
+
+DEFAULT_PROXIFLY_URL = (
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/VN/data.txt"
+)
 
 DEFAULT_FINEPROXY_URL = "https://fineproxy.org/vi/wp-json/fineproxy/v1/free-proxies/vn"
 
@@ -201,6 +219,59 @@ def _fetch_remote_proxy_list(url: str, timeout: float = 10.0) -> str:
     except Exception as e:
         print(f"  ⚠️  Không tải được danh sách proxy tự động ({url}): {e}")
         return ""
+
+
+def _parse_geonode_response(raw: str) -> list[dict]:
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+
+    rows = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return []
+
+    proxies = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        ip, port = r.get("ip"), r.get("port")
+        if not ip or not port:
+            continue
+        protocols = [p.lower() for p in (r.get("protocols") or [])]
+        # Ưu tiên socks5 > https > http (Playwright hỗ trợ tốt socks5 & http/https)
+        if "socks5" in protocols:
+            scheme = "socks5"
+        elif "https" in protocols:
+            scheme = "https"
+        elif "http" in protocols:
+            scheme = "http"
+        else:
+            continue
+        proxies.append({"server": f"{scheme}://{ip}:{port}"})
+    return proxies
+
+
+def _fetch_geonode_proxies(url: str, timeout: float = 10.0) -> list[dict]:
+    raw = _fetch_remote_proxy_list(url, timeout=timeout)
+    return _parse_geonode_response(raw) if raw else []
+
+
+def _parse_proxifly_response(raw: str) -> list[dict]:
+    proxies = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Format trong file proxifly là socks5://ip:port hoặc http://ip:port
+        server = _normalize_server(line)
+        proxies.append({"server": server})
+    return proxies
+
+
+def _fetch_proxifly_proxies(url: str, timeout: float = 10.0) -> list[dict]:
+    raw = _fetch_remote_proxy_list(url, timeout=timeout)
+    return _parse_proxifly_response(raw) if raw else []
 
 
 def _parse_fineproxy_response(raw: str) -> list[dict]:
@@ -344,9 +415,65 @@ def _health_check_proxies(proxies: list[dict], timeout: float = 4.0, max_workers
     return proxies
 
 
+CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
+CACHE_FILE = CACHE_DIR / "live_proxies.json"
+CACHE_TTL_SECONDS = 45 * 60  # Cache sống trong 45 phút
+
+
+def _read_cached_proxies() -> list[dict] | None:
+    """Đọc danh sách proxy đã kiểm tra sống từ file cache nếu còn trong hạn (45 phút).
+    Giúp các danh mục cào liên tiếp (hoặc các process python chạy kế tiếp) KHÔNG phải
+    tải lại 400+ proxy và health-check lại từ đầu, tiết kiệm 5-15s mỗi lần chạy.
+    """
+    try:
+        if not CACHE_FILE.exists():
+            return None
+        mtime = CACHE_FILE.stat().st_mtime
+        age = time.time() - mtime
+        if age > CACHE_TTL_SECONDS:
+            return None  # Cache đã quá hạn
+
+        data = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+        proxies = data.get("proxies") if isinstance(data, dict) else None
+        if isinstance(proxies, list) and len(proxies) >= 3:
+            minutes_left = int((CACHE_TTL_SECONDS - age) / 60)
+            print(f"  ⚡ Dùng lại {len(proxies)} proxy VN từ cache ({int(age / 60)} phút trước, còn hạn {minutes_left}p) — KHÔNG cần quét lại!")
+            return proxies
+    except Exception as e:
+        print(f"  ⚠️  Lỗi đọc cache proxy: {e}")
+    return None
+
+
+def _save_cached_proxies(proxies: list[dict]) -> None:
+    """Lưu danh sách proxy còn sống vào file cache để các danh mục/tiến trình sau dùng ngay."""
+    if not proxies or len(proxies) < 3:
+        return
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "updated_at": time.time(),
+            "count": len(proxies),
+            "proxies": proxies,
+        }
+        CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"  💾 Đã lưu {len(proxies)} proxy VN còn sống vào cache ({CACHE_FILE.name}) cho các danh mục tiếp theo.")
+    except Exception as e:
+        print(f"  ⚠️  Không lưu được cache proxy: {e}")
+
+
 def _load_proxies() -> list[dict]:
-    """Xem thứ tự ưu tiên nguồn proxy ở docstring đầu file. Tóm tắt: GỘP tự động ProxyScrape +
-    FineProxy + Databay (bật sẵn) > PROXY_SERVER đơn lẻ (tương thích ngược, dự phòng)."""
+    """Xem thứ tự ưu tiên nguồn proxy ở docstring đầu file:
+    1. Kiểm tra File Cache (nếu còn hạn 45 phút -> DÙNG NGAY trong 0.01s).
+    2. Nếu cache rỗng/hết hạn -> Gộp tự động ProxyScrape + Proxifly + Geonode -> Test song song -> Lưu cache.
+    3. Dự phòng PROXY_SERVER đơn lẻ từ .env.
+    """
+    # Bước 1: Thử dùng cache nếu có
+    if _truthy_env("PROXY_CACHE_ENABLED"):
+        cached = _read_cached_proxies()
+        if cached:
+            return cached
+
+    # Bước 2: Tự động tải từ các nguồn và kiểm tra
     if _truthy_env("PROXY_AUTO_FETCH"):
         merged: list[dict] = []
         seen_servers: set[str] = set()
@@ -366,28 +493,37 @@ def _load_proxies() -> list[dict]:
         n_ps = _add_all(_parse_proxy_list(raw_ps) if raw_ps else [])
         print(f"  ℹ️  ProxyScrape: {n_ps} proxy VN.")
 
-        # Nguồn 2: FineProxy VN — JSON {"rows":[{"ip","port","protos",...}]}, xem
-        # _parse_fineproxy_response(). GỘP THÊM (không thay thế) ProxyScrape — các nguồn free-proxy
-        # độc lập ít khi cùng chết cùng lúc, mỗi proxy sống thêm là một cửa thoát nữa khi rotate.
-        # Tắt riêng bằng PROXY_FINEPROXY_FETCH=0 nếu nguồn này gây vấn đề mà không muốn tắt cả
-        # PROXY_AUTO_FETCH (mất luôn ProxyScrape).
+        # Nguồn 2: Proxifly VN — danh sách proxy VN cập nhật liên tục hàng giờ trên GitHub (hàng trăm proxy VN)
+        if _truthy_env("PROXY_PROXIFLY_FETCH"):
+            pf_url = os.environ.get("PROXY_PROXIFLY_URL", "").strip() or DEFAULT_PROXIFLY_URL
+            n_pf = _add_all(_fetch_proxifly_proxies(pf_url))
+            print(f"  ℹ️  Proxifly VN: {n_pf} proxy VN mới (không trùng ProxyScrape).")
+
+        # Nguồn 3: Geonode VN — API proxy theo quốc gia VN kèm thông tin protocol
+        if _truthy_env("PROXY_GEONODE_FETCH"):
+            gn_url = os.environ.get("PROXY_GEONODE_URL", "").strip() or DEFAULT_GEONODE_URL
+            n_gn = _add_all(_fetch_geonode_proxies(gn_url))
+            print(f"  ℹ️  Geonode VN: {n_gn} proxy VN mới.")
+
+        # Nguồn 4: FineProxy VN — JSON {"rows":[{"ip","port","protos",...}]}
         if _truthy_env("PROXY_FINEPROXY_FETCH"):
             fp_url = os.environ.get("PROXY_FINEPROXY_URL", "").strip() or DEFAULT_FINEPROXY_URL
             n_fp = _add_all(_fetch_fineproxy_proxies(fp_url))
-            print(f"  ℹ️  FineProxy: {n_fp} proxy VN mới (không trùng ProxyScrape).")
+            print(f"  ℹ️  FineProxy: {n_fp} proxy VN mới.")
 
-        # Nguồn 3: Databay VN — JSON {"data":[{"ip","port","protocol","ssl","iso",...}]}, xem
-        # _parse_databay_response(). GỘP THÊM (không thay thế) hai nguồn trên. Tắt riêng bằng
-        # PROXY_DATABAY_FETCH=0 nếu nguồn này gây vấn đề mà không muốn tắt cả PROXY_AUTO_FETCH.
+        # Nguồn 5: Databay VN — JSON {"data":[{"ip","port","protocol","ssl","iso",...}]}
         if _truthy_env("PROXY_DATABAY_FETCH"):
             db_url = os.environ.get("PROXY_DATABAY_URL", "").strip() or DEFAULT_DATABAY_URL
             n_db = _add_all(_fetch_databay_proxies(db_url))
-            print(f"  ℹ️  Databay: {n_db} proxy VN mới (không trùng ProxyScrape/FineProxy).")
+            print(f"  ℹ️  Databay: {n_db} proxy VN mới.")
 
         if merged:
-            print(f"  ℹ️  Đã tải tổng {len(merged)} proxy (miễn phí, tự động, gộp 3 nguồn).")
-            return _health_check_proxies(merged)
-        print("  ⚠️  Danh sách proxy tự động rỗng/lỗi (cả 3 nguồn) — thử PROXY_SERVER (nếu có cấu hình).")
+            print(f"  ℹ️  Đã tải tổng {len(merged)} proxy (miễn phí, tự động, gộp các nguồn).")
+            live_proxies = _health_check_proxies(merged)
+            if live_proxies:
+                _save_cached_proxies(live_proxies)
+            return live_proxies
+        print("  ⚠️  Danh sách proxy tự động rỗng/lỗi (tất cả các nguồn) — thử PROXY_SERVER (nếu có cấu hình).")
 
     # Tương thích ngược: PROXY_SERVER đơn lẻ -> danh sách 1 proxy.
     server = os.environ.get("PROXY_SERVER", "").strip()

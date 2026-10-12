@@ -56,7 +56,7 @@ class ProxySession:
     def _build(self) -> None:
         proxy = None
         if self._use_proxy:
-            proxy = get_pool().current()
+            proxy = get_pool().next_proxy()
             if proxy is None:
                 raise RuntimeError(
                     "This site geo-blocks non-Vietnam IPs and needs a proxy, but no live proxy "
