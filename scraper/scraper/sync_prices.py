@@ -38,6 +38,7 @@ PER_COMPETITOR_CONCURRENCY = {
     "Phúc Anh": 1,  # Đặt concurrency = 1 cho Phúc Anh để cào tuần tự, tránh Cloudflare Rate-Limit (HTTP 429)
     "An Khang": 2,  # Đặt concurrency = 2 cho An Khang để tránh Server Disconnect
     "Wifi.com.vn": 2,  # httpx + Googlebot UA — giới hạn 2 request song song để tránh Server Disconnect
+    "Laptop World": 4,  # SSR tĩnh phản hồi nhanh
 }
 
 MIN_VALID_PRICE = 500
@@ -125,6 +126,7 @@ SELECTORS = {
     "An Khang": [".pd-table-2021 .pro-price", ".p-detail-right .pro-price", ".pro-price", ".detail-price", ".product-price", ".pd-price", ".giakuyenmai", ".special-price"],
     "Vũ Hoàng Telecom": [".summary .price ins .woocommerce-Price-amount", ".summary .price .woocommerce-Price-amount", ".summary p.price", ".price", ".az-price ins", ".az-price"],
     "Wifi.com.vn": [".pd-deal-price", ".pd-price", ".p-price", ".price-detail", ".detail-price", ".price"],
+    "Laptop World": [".js-this-product", ".p-price .price-border", ".p-price", ".detail-price"],
 }
 
 _AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued", "preorder", "presale"}

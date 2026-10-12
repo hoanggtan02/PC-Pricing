@@ -8,6 +8,8 @@ competitors:
     search_url: "https://www.ankhang.vn/tim?q={query}"
   tinhocngoisao:
     search_url: "https://tinhocngoisao.com/search?q={query}"
+  laptopworld:
+    search_url: "https://laptopworld.vn/tim?q={query}"
 
 # ── categories ─────────────────────────────────────────────────────────────────────────────────
 categories:
@@ -36,6 +38,7 @@ categories:
       cellphones: "https://cellphones.com.vn/man-hinh.html"
       tinhocngoisao: "https://tinhocngoisao.com/collections/man-hinh-may-tinh"
       ankhang: "https://www.ankhang.vn/man-hinh-may-tinh.html"
+      laptopworld: "https://laptopworld.vn/linh-kien-may-tinh/man-hinh-may-tinh.html"
 
   cpu:
     tier: A

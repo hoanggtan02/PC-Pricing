@@ -70,6 +70,7 @@ jobs:
           - { id: tinhocngoisao, competitor: "Tin Học Ngôi Sao" }
           - { id: phucanh,     competitor: "Phúc Anh" }
           - { id: ankhang,     competitor: "An Khang" }
+          - { id: laptopworld, competitor: "Laptop World" }
     defaults:
       run:
         working-directory: scraper
