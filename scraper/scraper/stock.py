@@ -13,6 +13,7 @@ CÒN HÀNG (True) khi không có tín hiệu — an toàn hơn là ẩn nhầm s
 from __future__ import annotations
 
 import re
+import unicodedata
 
 # Các cụm từ báo HẾT HÀNG mà những cửa hàng VN dùng (không phân biệt hoa/thường, có/không dấu).
 # "Liên hệ" = báo giá theo yêu cầu (không bán trực tiếp) → coi như hết hàng để không hiện là rẻ nhất.
@@ -39,8 +40,13 @@ _OOS_RE = re.compile("|".join(_OOS_PATTERNS), re.IGNORECASE)
 
 
 def is_out_of_stock(text: str | None) -> bool:
-    """True nếu `text` (nội dung thẻ sản phẩm hoặc trang) chứa tín hiệu hết hàng."""
-    return bool(text) and bool(_OOS_RE.search(text))
+    """True nếu `text` (nội dung thẻ sản phẩm hoặc trang) chứa tín hiệu hết hàng.
+    Luôn chuẩn hóa NFC unicode để bắt được cả chữ có dấu dựng sẵn và tổ hợp (e.g. 'Liên hệ' vs 'Liên hệ').
+    """
+    if not text:
+        return False
+    normalized = unicodedata.normalize("NFC", text)
+    return bool(_OOS_RE.search(normalized))
 
 
 def is_in_stock(text: str | None) -> bool:

@@ -126,7 +126,7 @@ SELECTORS = {
     "An Khang": [".pd-table-2021 .pro-price", ".p-detail-right .pro-price", ".pro-price", ".detail-price", ".product-price", ".pd-price", ".giakuyenmai", ".special-price"],
     "Vũ Hoàng Telecom": [".summary .price ins .woocommerce-Price-amount", ".summary .price .woocommerce-Price-amount", ".summary p.price", ".price", ".az-price ins", ".az-price"],
     "Wifi.com.vn": [".pd-deal-price", ".pd-price", ".p-price", ".price-detail", ".detail-price", ".price"],
-    "Laptop World": [".js-this-product", ".p-price .price-border", ".p-price", ".detail-price"],
+    "Laptop World": [".js-this-product"],
 }
 
 _AVAILABILITY_OUT = {"outofstock", "soldout", "discontinued", "preorder", "presale"}
@@ -308,6 +308,46 @@ async def _ankhang_out_of_stock(page: Page) -> bool | None:
         return None
 
 
+async def _laptopworld_out_of_stock(page: Page) -> bool | None:
+    """Tín hiệu hết hàng riêng cho Laptop World:
+    1. Nhãn 'Tình trạng: Hết hàng' / 'Tình trạng: Liên hệ' trong span.product-info b.red
+    2. Ô giá chính .js-this-product có text 'Liên hệ' hoặc data-price = 0
+    3. Toàn trang có chữ 'Hết hàng' trong khối thông tin sản phẩm
+    """
+    try:
+        oos = await page.evaluate(
+            """() => {
+                const norm = (s) => (s || '').normalize('NFC').toLowerCase().trim();
+                
+                // 1. Kiểm tra nhãn tình trạng: <span class="product-info"> Tình trạng: <b class="red">Hết hàng / Liên hệ</b>
+                const infoSpans = Array.from(document.querySelectorAll('.product-info, .list-top-dt p, .list-top-dt span'));
+                for (const el of infoSpans) {
+                    const txt = norm(el.textContent);
+                    if (txt.includes('tình trạng')) {
+                        if (txt.includes('hết hàng') || txt.includes('tạm hết hàng') || txt.includes('liên hệ')) {
+                            return true;
+                        }
+                    }
+                }
+
+                // 2. Kiểm tra ô giá chính
+                const priceEl = document.querySelector('.js-this-product');
+                if (priceEl) {
+                    const pText = norm(priceEl.textContent);
+                    const dPrice = priceEl.getAttribute('data-price');
+                    if (pText.includes('liên hệ') || pText.includes('hết hàng') || dPrice === '0') {
+                        return true;
+                    }
+                }
+
+                return false;
+            }"""
+        )
+        return bool(oos)
+    except Exception:
+        return None
+
+
 def extract_labeled_price(text: str) -> int | None:
     """Lấy giá ngay sau nhãn giá chính, không lấy giá sản phẩm gợi ý."""
     patterns = (
@@ -403,6 +443,16 @@ async def extract_price_generic(page: Page, competitor: str) -> tuple[int | None
                 p = clean_price(txt)
                 if p and p > 1000:
                     return p, True
+        except Exception:
+            pass
+
+    # 0e. Laptop World: kiểm tra tình trạng "Hết hàng" / "Liên hệ" trong thông tin sản phẩm và ô giá
+    if competitor == "Laptop World":
+        try:
+            oos = await _laptopworld_out_of_stock(page)
+            if oos:
+                print(f"  [Laptop World] Phát hiện 'Tình trạng: Hết hàng' / 'Liên hệ' → HẾT HÀNG")
+                return 0, False
         except Exception:
             pass
 

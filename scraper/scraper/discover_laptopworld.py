@@ -162,7 +162,11 @@ def discover(category: str = "laptop", brand: str | None = None) -> list[dict]:
 
 
 def check_stock(urls: list[str]) -> dict[str, bool]:
-    """Kiểm tra tình trạng còn hàng trên từng URL sản phẩm của Laptop World."""
+    """Kiểm tra tình trạng còn hàng trên từng URL sản phẩm của Laptop World.
+    1. Check nhãn Tình trạng: Hết hàng / Liên hệ (trong .product-info / .list-top-dt)
+    2. Check ô giá .js-this-product có data-price == 0 hoặc chứa 'liên hệ' / 'hết hàng'
+    """
+    import unicodedata
     status: dict[str, bool] = {}
     for url in urls:
         try:
@@ -171,25 +175,25 @@ def check_stock(urls: list[str]) -> dict[str, bool]:
                 status[url] = True
                 continue
             soup = BeautifulSoup(r.text, "html.parser")
-            
-            # Check nút đặt mua ngay / cho vào giỏ
-            buy_btns = soup.select(".btn-buynow, .btn-addcart, .buy_combo")
-            
-            # Check giá data-price hoặc chữ Liên hệ
-            p_el = soup.select_one(".js-this-product")
-            data_price = p_el.get("data-price") if p_el else None
-            is_lien_he = (p_el and "liên hệ" in p_el.get_text().lower()) or (data_price == "0")
-            
-            # Check nhãn tình trạng
-            text = r.text.lower()
-            is_out = "hết hàng" in text or "tạm hết hàng" in text or "ngừng kinh doanh" in text
 
-            if is_lien_he or is_out:
-                status[url] = False
-            elif buy_btns:
-                status[url] = True
-            else:
-                status[url] = True
+            # 1. Check nhãn Tình trạng cụ thể
+            is_out = False
+            for el in soup.select(".product-info, .list-top-dt p, .list-top-dt span"):
+                t = unicodedata.normalize("NFC", el.get_text() or "").lower()
+                if "tình trạng" in t:
+                    if "hết hàng" in t or "tạm hết hàng" in t or "liên hệ" in t:
+                        is_out = True
+                        break
+
+            # 2. Check ô giá chính
+            p_el = soup.select_one(".js-this-product")
+            if p_el:
+                d_price = p_el.get("data-price")
+                p_text = unicodedata.normalize("NFC", p_el.get_text() or "").lower()
+                if d_price == "0" or "liên hệ" in p_text or "hết hàng" in p_text:
+                    is_out = True
+
+            status[url] = not is_out
         except Exception:
             status[url] = True
     return status
